@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { scanFiles, Finding, explanations } from '@/lib/scanner'
 
 export default function Page() {
@@ -14,6 +14,7 @@ export default function Page() {
   const [error, setError] = useState<string | null>(null)
   const [fileError, setFileError] = useState<string | null>(null)
   const [selectedFinding, setSelectedFinding] = useState<Finding | null>(null)
+  const [allDiscoveredFindings, setAllDiscoveredFindings] = useState<Finding[]>([])
 
   const fileCount = files.length
   const findings = useMemo(() => {
@@ -24,6 +25,13 @@ export default function Page() {
     return scanFiles([{ file: selectedFile, content: fileContent }])
   }, [selectedFile, fileContent])
 
+
+  /*
+  * Calculate the overall risk score based on the severity of findings
+  * The risk score is not out of 100.
+  * it's a raw sum: CRITICAL×10 + HIGH×5 + MEDIUM×2 + LOW×1.
+  * For example, 1 CRITICAL + 2 HIGH = 20.
+  */
   const riskScore = useMemo(() => {
     const severityWeights = { CRITICAL: 10, HIGH: 5, MEDIUM: 2, LOW: 1 }
     const total = findings.reduce((sum, finding) => {
@@ -33,12 +41,34 @@ export default function Page() {
     return total
   }, [findings])
 
+  const hotspots = useMemo(() => {
+    const fileMap = new Map<string, number>()
+    allDiscoveredFindings.forEach(finding => {
+      fileMap.set(finding.file, (fileMap.get(finding.file) ?? 0) + 1)
+    })
+    return Array.from(fileMap.entries())
+      .map(([file, count]) => ({ file, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 3)
+  }, [allDiscoveredFindings])
+
+  useEffect(() => {
+    if (findings.length > 0) {
+      setAllDiscoveredFindings(prev => {
+        const existing = new Set(prev.map(f => `${f.file}:${f.line}:${f.matched}`))
+        const newFindings = findings.filter(f => !existing.has(`${f.file}:${f.line}:${f.matched}`))
+        return [...prev, ...newFindings]
+      })
+    }
+  }, [findings])
+
   const handleScan = async () => {
     setError(null)
     setFileError(null)
     setSelectedFile(null)
     setFileContent('')
     setFiles([])
+    setAllDiscoveredFindings([])
 
     if (!repoUrl.trim()) {
       setError('Please paste a GitHub repository URL.')
@@ -190,6 +220,30 @@ export default function Page() {
                   Showing first 30 of {files.length} files.
                 </p>
               ) : null}
+
+              {files.length > 0 ? (
+                <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-4 dark:border-red-800 dark:bg-red-950">
+                  <p className="text-xs uppercase tracking-[0.2em] text-red-600 dark:text-red-400 font-semibold">Hotspots</p>
+                  <div className="mt-3 space-y-2">
+                    {hotspots.length > 0 ? (
+                      hotspots.map((hotspot) => (
+                        <button
+                          key={hotspot.file}
+                          onClick={() => handleSelectFile(hotspot.file)}
+                          className="w-full text-left rounded-xl px-3 py-2 bg-white dark:bg-slate-900 border border-red-200 dark:border-red-800 hover:border-red-300 dark:hover:border-red-700 transition"
+                        >
+                          <p className="font-mono text-sm text-red-900 dark:text-red-100">{hotspot.file}</p>
+                          <p className="text-xs text-red-700 dark:text-red-300">{hotspot.count} finding{hotspot.count !== 1 ? 's' : ''}</p>
+                        </button>
+                      ))
+                    ) : (
+                      <div className="rounded-xl border border-red-100 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-200">
+                        No hotspots identified yet. Open files to populate this list.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : null}
             </div>
 
             <div className="rounded-3xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
@@ -258,7 +312,7 @@ export default function Page() {
                     {findings.length > 0 ? (
                       <div className="mt-4 rounded-2xl border border-orange-200 bg-orange-50 p-4 dark:border-orange-800 dark:bg-orange-950">
                         <p className="text-xs uppercase tracking-[0.2em] text-orange-600 dark:text-orange-400 font-semibold">Risk Score</p>
-                        <p className="mt-2 text-3xl font-bold text-orange-900 dark:text-orange-100">{riskScore} / 100</p>
+                        <p className="mt-2 text-3xl font-bold text-orange-900 dark:text-orange-100">{riskScore}</p>
                         <p className="mt-1 text-xs text-orange-700 dark:text-orange-200">
                           {findings.filter(f => f.severity === 'CRITICAL').length} Critical &bull; {findings.filter(f => f.severity === 'HIGH').length} High &bull; {findings.filter(f => f.severity === 'MEDIUM').length} Medium &bull; {findings.filter(f => f.severity === 'LOW').length} Low
                         </p>
