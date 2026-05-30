@@ -24,6 +24,15 @@ export default function Page() {
     return scanFiles([{ file: selectedFile, content: fileContent }])
   }, [selectedFile, fileContent])
 
+  const riskScore = useMemo(() => {
+    const severityWeights = { CRITICAL: 10, HIGH: 5, MEDIUM: 2, LOW: 1 }
+    const total = findings.reduce((sum, finding) => {
+      const weight = severityWeights[finding.severity as keyof typeof severityWeights] || 0
+      return sum + weight
+    }, 0)
+    return total
+  }, [findings])
+
   const handleScan = async () => {
     setError(null)
     setFileError(null)
@@ -243,6 +252,16 @@ export default function Page() {
                             <p className="mt-1 text-sm text-green-900 dark:text-green-100">{explanations[selectedFinding.title].fix}</p>
                           </div>
                         </div>
+                      </div>
+                    ) : null}
+
+                    {findings.length > 0 ? (
+                      <div className="mt-4 rounded-2xl border border-orange-200 bg-orange-50 p-4 dark:border-orange-800 dark:bg-orange-950">
+                        <p className="text-xs uppercase tracking-[0.2em] text-orange-600 dark:text-orange-400 font-semibold">Risk Score</p>
+                        <p className="mt-2 text-3xl font-bold text-orange-900 dark:text-orange-100">{riskScore} / 100</p>
+                        <p className="mt-1 text-xs text-orange-700 dark:text-orange-200">
+                          {findings.filter(f => f.severity === 'CRITICAL').length} Critical &bull; {findings.filter(f => f.severity === 'HIGH').length} High &bull; {findings.filter(f => f.severity === 'MEDIUM').length} Medium &bull; {findings.filter(f => f.severity === 'LOW').length} Low
+                        </p>
                       </div>
                     ) : null}
                   </div>
