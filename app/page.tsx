@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from 'react'
-import { scanFiles, Finding } from '@/lib/scanner'
+import { scanFiles, Finding, explanations } from '@/lib/scanner'
 
 export default function Page() {
   const [repoUrl, setRepoUrl] = useState('')
@@ -13,6 +13,7 @@ export default function Page() {
   const [status, setStatus] = useState('Waiting for repository...')
   const [error, setError] = useState<string | null>(null)
   const [fileError, setFileError] = useState<string | null>(null)
+  const [selectedFinding, setSelectedFinding] = useState<Finding | null>(null)
 
   const fileCount = files.length
   const findings = useMemo(() => {
@@ -212,17 +213,38 @@ export default function Page() {
                     {findings.length > 0 ? (
                       <div className="mt-4 space-y-3">
                         {findings.map((finding, index) => (
-                          <div key={`${finding.file}-${finding.line}-${index}`} className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                          <div key={`${finding.file}-${finding.line}-${index}`} className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 cursor-pointer transition hover:border-slate-300 dark:hover:border-slate-700" onClick={() => setSelectedFinding(finding)}>
                             <p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">{finding.severity}</p>
                             <p className="mt-1 font-semibold text-slate-900 dark:text-slate-100">{finding.title}</p>
                             <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Line {finding.line}</p>
                             <p className="mt-2 text-sm text-slate-700 dark:text-slate-300">Matched: <span className="font-mono">{finding.matched}</span></p>
+                            <p className="mt-2 text-xs text-slate-600 dark:text-slate-400 font-mono bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">{finding.code}</p>
                           </div>
                         ))}
                       </div>
                     ) : (
                       <p className="mt-4 text-sm text-slate-600 dark:text-slate-400">No suspicious strings found in this file.</p>
                     )}
+
+                    {selectedFinding && explanations[selectedFinding.title] ? (
+                      <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950">
+                        <p className="text-xs uppercase tracking-[0.2em] text-blue-600 dark:text-blue-400 font-semibold">Explanation</p>
+                        <div className="mt-3 space-y-2">
+                          <div>
+                            <p className="text-xs uppercase tracking-[0.2em] text-blue-600 dark:text-blue-400">Why</p>
+                            <p className="mt-1 text-sm text-blue-900 dark:text-blue-100">{explanations[selectedFinding.title].why}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs uppercase tracking-[0.2em] text-red-600 dark:text-red-400">Impact</p>
+                            <p className="mt-1 text-sm text-red-900 dark:text-red-100">{explanations[selectedFinding.title].impact}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs uppercase tracking-[0.2em] text-green-600 dark:text-green-400">Fix</p>
+                            <p className="mt-1 text-sm text-green-900 dark:text-green-100">{explanations[selectedFinding.title].fix}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 </>
               ) : (

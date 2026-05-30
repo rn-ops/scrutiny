@@ -11,6 +11,7 @@ export type Finding = {
   severity: string
   title: string
   matched: string
+  code: string
 }
 
 export const patterns: Pattern[] = [
@@ -35,6 +36,24 @@ function matchPattern(text: string, pattern: Pattern): string | null {
   return null
 }
 
+export const explanations: Record<string, { why: string; impact: string; fix: string }> = {
+  'Command Injection': {
+    why: 'exec() allows running shell commands directly. User input in these commands is dangerous.',
+    impact: 'Attackers can execute arbitrary system commands, potentially compromising your entire system.',
+    fix: 'Avoid exec(). Use safe APIs (child_process.execFile) with arguments array, never shell=true.'
+  },
+  'Dynamic Evaluation': {
+    why: 'eval() executes code as a string. This is extremely dangerous with user input.',
+    impact: 'Any data passed to eval() can execute malicious code with full application privileges.',
+    fix: 'Never use eval(). Use JSON.parse() for data, Function() constructor only with sanitized input, or refactor.'
+  },
+  'Hardcoded Secret': {
+    why: 'Secrets (API keys, passwords, tokens) in code are exposed in version control and built artifacts.',
+    impact: 'Attackers can use leaked credentials to impersonate your app, access data, or cause damage.',
+    fix: 'Move secrets to environment variables or a secrets manager. Add them to .gitignore. Rotate any exposed keys.'
+  }
+}
+
 export function scanFiles(files: Array<{ file: string; content: string }>): Finding[] {
   const findings: Finding[] = []
 
@@ -50,7 +69,8 @@ export function scanFiles(files: Array<{ file: string; content: string }>): Find
             line: index + 1,
             severity: pattern.severity,
             title: pattern.type,
-            matched
+            matched,
+            code: line.trim()
           })
         }
       })
