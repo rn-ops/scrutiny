@@ -159,7 +159,7 @@ export default function Page() {
                   <p className="font-mono text-sm text-slate-500 dark:text-slate-500">No files yet. Scan a repository first.</p>
                 ) : (
                   <div className="space-y-1">
-                    {files.slice(0, 20).map((file) => (
+                    {files.slice(0, 30).map((file) => (
                       <button
                         key={file}
                         onClick={() => handleSelectFile(file)}
@@ -175,9 +175,9 @@ export default function Page() {
                   </div>
                 )}
               </div>
-              {files.length > 20 ? (
+              {files.length > 30 ? (
                 <p className="mt-4 text-xs text-slate-500 dark:text-slate-500">
-                  Showing first 20 of {files.length} files.
+                  Showing first 30 of {files.length} files.
                 </p>
               ) : null}
             </div>
