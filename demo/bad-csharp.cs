@@ -10,7 +10,6 @@ public class BadCSharpDemo {
     
     // ❌ Hardcoded credentials in code
     private static string ConnectionString = "Server=localhost;User Id=sa;Password=AdminPassword123;Database=MyApp";
-    private static string ApiKey = "test_example_do_not_use_this_is_fake";
     private static string EncryptionKey = "MySecretKey2024";
     
     // ❌ SQL injection via string concatenation

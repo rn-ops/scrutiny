@@ -1,7 +1,6 @@
 // Demo: Common Node.js security mistakes
 
 const exec = require('child_process').exec;
-const apiKey = 'sk-live-abc123def456';
 const dbPassword = 'root:password123';
 
 // ❌ Command Injection

@@ -24,12 +24,9 @@ export function parseGithubRepoUrl(value: string) {
 async function fetchJson(url: string, options: RequestInit = {}) {
   const headers: HeadersInit = {
     Accept: 'application/vnd.github+json',
-    ...options.headers
-  }
-
-  if (GITHUB_TOKEN) {
-    headers.Authorization = `Bearer ${GITHUB_TOKEN}`
-  }
+    ...options.headers,
+    Authorization: `Bearer ${GITHUB_TOKEN}`
+  } as HeadersInit;
 
   const response = await fetch(url, { ...options, headers })
   if (!response.ok) {
