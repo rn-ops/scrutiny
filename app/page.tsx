@@ -19,6 +19,10 @@ export default function Page() {
   const [allDiscoveredFindings, setAllDiscoveredFindings] = useState<Finding[]>([])
   const [repoContext, setRepoContext] = useState<string | null>(null)
   const [loadingContext, setLoadingContext] = useState(false)
+  const [aiExplanation, setAiExplanation] = useState<string | null>(null)
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiError, setAiError] = useState<string | null>(null)
+  const [aiCache, setAiCache] = useState<Record<string, string>>({})
 
   const fileCount = files.length
   const findings = useMemo(() => {
@@ -44,7 +48,69 @@ export default function Page() {
     }, 0)
     return total
   }, [findings])
+  const getAiCacheKey = (finding: Finding) => `${finding.title}:${finding.code}`
 
+  useEffect(() => {
+    if (selectedFinding) {
+      const key = getAiCacheKey(selectedFinding)
+      setAiExplanation(aiCache[key] ?? null)
+      setAiError(null)
+    } else {
+      setAiExplanation(null)
+      setAiError(null)
+    }
+  }, [selectedFinding, aiCache])
+
+  const getSnippet = (finding: Finding) => {
+    const lines = fileContent.split('\n')
+    const lineIndex = finding.line - 1
+    const snippet = lines.slice(Math.max(0, lineIndex - 3), Math.min(lines.length, lineIndex + 4))
+    return snippet.join('\n')
+  }
+
+  const handleAiExplain = async () => {
+    if (!selectedFinding) {
+      return
+    }
+
+    const cacheKey = getAiCacheKey(selectedFinding)
+    if (aiCache[cacheKey]) {
+      setAiExplanation(aiCache[cacheKey])
+      setAiError(null)
+      return
+    }
+
+    setAiLoading(true)
+    setAiError(null)
+
+    try {
+      const response = await fetch('/api/explain', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: selectedFinding.title,
+          file: selectedFinding.file,
+          line: selectedFinding.line,
+          code: selectedFinding.code,
+          snippet: getSnippet(selectedFinding)
+        })
+      })
+
+      const payload = await response.json()
+      if (!response.ok || !payload.success) {
+        setAiError(payload.message || 'Failed to get AI explanation')
+        return
+      }
+
+      setAiExplanation(payload.explanation)
+      setAiCache((prev) => ({ ...prev, [cacheKey]: payload.explanation }))
+    } catch (error) {
+      console.error('AI explain error:', error)
+      setAiError('Unable to reach AI explain endpoint.')
+    } finally {
+      setAiLoading(false)
+    }
+  }
   const hotspots = useMemo(() => {
     const fileMap = new Map<string, number>()
     allDiscoveredFindings.forEach(finding => {
@@ -70,10 +136,13 @@ export default function Page() {
     setError(null)
     setFileError(null)
     setSelectedFile(null)
+    setSelectedFinding(null)
     setFileContent('')
     setFiles([])
     setAllDiscoveredFindings([])
     setRepoContext(null)
+    setAiExplanation(null)
+    setAiError(null)
 
     if (!repoUrl.trim()) {
       setError('Please paste a GitHub repository URL.')
@@ -144,6 +213,9 @@ export default function Page() {
 
   const handleSelectFile = async (path: string) => {
     setSelectedFile(path)
+    setSelectedFinding(null)
+    setAiExplanation(null)
+    setAiError(null)
     setFileError(null)
     setFileContent('')
 
@@ -288,11 +360,6 @@ export default function Page() {
                   <p className="text-sm uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">Selected file</p>
                   <p className="mt-2 font-mono text-base text-slate-900 dark:text-slate-100">{selectedFile ?? 'None'}</p>
                 </div>
-                {loadingFile ? (
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                    Loading
-                  </span>
-                ) : null}
               </div>
 
               {fileError ? (
@@ -310,20 +377,63 @@ export default function Page() {
                   <div className="mt-6 rounded-3xl border border-slate-200 bg-slate-50 p-5 dark:border-slate-800 dark:bg-slate-950">
                     <p className="text-sm uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">Findings</p>
                     {findings.length > 0 ? (
-                      <div className="mt-4 space-y-3">
-                        {findings.map((finding, index) => (
-                          <div key={`${finding.file}-${finding.line}-${index}`} className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 cursor-pointer transition hover:border-slate-300 dark:hover:border-slate-700" onClick={() => setSelectedFinding(finding)}>
-                            <p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">{finding.severity}</p>
-                            <p className="mt-1 font-semibold text-slate-900 dark:text-slate-100">{finding.title}</p>
-                            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Line {finding.line}</p>
-                            <p className="mt-2 text-sm text-slate-700 dark:text-slate-300">Matched: <span className="font-mono">{finding.matched}</span></p>
-                            <p className="mt-2 text-xs text-slate-600 dark:text-slate-400 font-mono bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">{finding.code}</p>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="mt-4 text-sm text-slate-600 dark:text-slate-400">No suspicious strings found in this file.</p>
-                    )}
+  <div className="mt-4 space-y-3">
+    {findings.map((finding, index) => (
+      <div 
+        key={`${finding.file}-${finding.line}-${index}`} 
+        className="relative rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 cursor-pointer transition hover:border-slate-300 dark:hover:border-slate-700" 
+        onClick={() => setSelectedFinding(finding)}
+      >
+        {/* Top Row Header Container */}
+        <div className="flex justify-between items-start gap-4">
+          <div>
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
+              {finding.severity}
+            </p>
+            <p className="mt-1 font-semibold text-slate-900 dark:text-slate-100">
+              {finding.title}
+            </p>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              Line {finding.line}
+            </p>
+          </div>
+
+          {/* AI Button Context Container (Stays Top-Right) */}
+          <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
+            {selectedFinding === finding ? (
+              <button
+                type="button"
+                onClick={handleAiExplain}
+                disabled={aiLoading}
+                className="inline-flex h-8 items-center justify-center rounded-xl border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-900 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-900"
+              >
+                {aiLoading ? 'Explaining...' : 'Explain with AI'}
+              </button>
+            ) : null}
+            {loadingFile ? (
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                Loading
+              </span>
+            ) : null}
+          </div>
+        </div>
+
+        {/* Lower Finding Details */}
+        <p className="mt-4 text-sm text-slate-700 dark:text-slate-300">
+          Matched: <span className="font-mono">{finding.matched}</span>
+        </p>
+        <p className="mt-2 text-xs text-slate-600 dark:text-slate-400 font-mono bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">
+          {finding.code}
+        </p>
+      </div>
+    ))}
+  </div>
+) : (
+  <p className="mt-4 text-sm text-slate-600 dark:text-slate-400">
+    No suspicious strings found in this file.
+  </p>
+)}
+
 
                     {selectedFinding && explanations[selectedFinding.title] ? (
                       <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950">
@@ -395,6 +505,34 @@ export default function Page() {
                   Scan a repository to generate context.
                 </div>
               )}
+
+              {(aiExplanation || aiLoading || aiError) ? (
+                <div className="mt-6 rounded-3xl border border-violet-200 bg-violet-50 p-5 dark:border-violet-800 dark:bg-violet-950">
+                  <div className="flex items-center justify-between gap-4 mb-3">
+                    <div>
+                      <p className="text-sm uppercase tracking-[0.3em] text-violet-500 dark:text-violet-300">AI Explanation</p>
+                      <p className="mt-2 text-xs text-violet-600 dark:text-violet-400">Detailed Gemini explanation for the selected finding</p>
+                    </div>
+                    {aiLoading ? (
+                      <span className="rounded-full bg-violet-100 px-3 py-1 text-xs font-semibold text-violet-700 dark:bg-violet-900 dark:text-violet-200">
+                        Loading AI
+                      </span>
+                    ) : null}
+                  </div>
+
+                  {aiError ? (
+                    <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-200">
+                      {aiError}
+                    </div>
+                  ) : null}
+
+                  {aiExplanation ? (
+                    <div className="prose prose-sm max-w-none dark:prose-invert text-slate-700 dark:text-slate-300">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{aiExplanation}</ReactMarkdown>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           ) : null}
         </section>
