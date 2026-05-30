@@ -2,6 +2,8 @@
 
 import { useMemo, useState, useEffect } from 'react'
 import { scanFiles, Finding, explanations } from '@/lib/scanner'
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 export default function Page() {
   const [repoUrl, setRepoUrl] = useState('')
@@ -15,6 +17,8 @@ export default function Page() {
   const [fileError, setFileError] = useState<string | null>(null)
   const [selectedFinding, setSelectedFinding] = useState<Finding | null>(null)
   const [allDiscoveredFindings, setAllDiscoveredFindings] = useState<Finding[]>([])
+  const [repoContext, setRepoContext] = useState<string | null>(null)
+  const [loadingContext, setLoadingContext] = useState(false)
 
   const fileCount = files.length
   const findings = useMemo(() => {
@@ -69,6 +73,7 @@ export default function Page() {
     setFileContent('')
     setFiles([])
     setAllDiscoveredFindings([])
+    setRepoContext(null)
 
     if (!repoUrl.trim()) {
       setError('Please paste a GitHub repository URL.')
@@ -97,6 +102,37 @@ export default function Page() {
 
       setFiles(payload.files ?? [])
       setStatus(`Found ${payload.files?.length ?? 0} files`)
+
+      // Fetch repository context with Gemini
+      setLoadingContext(true)
+      try {
+        const readmeResponse = await fetch('/api/file', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: repoUrl.trim(), path: 'README.md' })
+        })
+        const readmePayload = await readmeResponse.json()
+        const readme = readmePayload.success ? readmePayload.content : null
+
+        const contextResponse = await fetch('/api/context', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            url: repoUrl.trim(),
+            files: payload.files ?? [],
+            readme
+          })
+        })
+
+        const contextPayload = await contextResponse.json()
+        if (contextPayload.success) {
+          setRepoContext(contextPayload.context)
+        }
+      } catch (e) {
+        console.error('Failed to fetch context:', e)
+      } finally {
+        setLoadingContext(false)
+      }
     } catch {
       setError('Unable to reach the scan endpoint. Check the URL and try again.')
       setStatus('Scan failed')
@@ -327,6 +363,40 @@ export default function Page() {
               )}
             </div>
           </div>
+
+          {files.length > 0 ? (
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
+              <div className="flex items-center justify-between gap-4 mb-4">
+                <div>
+                  <p className="text-sm uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">Repository Context</p>
+                  <p className="mt-2 text-xs text-slate-600 dark:text-slate-400">Security-minded summary powered by Gemini</p>
+                </div>
+                {loadingContext ? (
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                    Analyzing...
+                  </span>
+                ) : null}
+              </div>
+
+              {repoContext ? (
+                <div className="prose prose-sm max-w-none dark:prose-invert text-slate-700 dark:text-slate-300">
+                  <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {repoContext}
+                    </ReactMarkdown>
+                  </div>
+                </div>
+              ) : loadingContext ? (
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+                  Generating repository context...
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+                  Scan a repository to generate context.
+                </div>
+              )}
+            </div>
+          ) : null}
         </section>
       </main>
     </div>
