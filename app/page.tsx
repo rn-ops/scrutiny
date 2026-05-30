@@ -23,6 +23,10 @@ export default function Page() {
   const [aiLoading, setAiLoading] = useState(false)
   const [aiError, setAiError] = useState<string | null>(null)
   const [aiCache, setAiCache] = useState<Record<string, string>>({})
+  const [catClicks, setCatClicks] = useState(0)
+  const [devMode, setDevMode] = useState(false)
+  const [cursorPos, setCursorPos] = useState({ x: 0, y: 0 })
+  const [bubbleVisible, setBubbleVisible] = useState(false)
 
   const fileCount = files.length
   const findings = useMemo(() => {
@@ -50,6 +54,16 @@ export default function Page() {
   }, [findings])
   const getAiCacheKey = (finding: Finding) => `${finding.title}:${finding.code}`
 
+  const handleCatClick = () => {
+    setCatClicks((prev) => {
+      const next = prev + 1
+      if (next >= 5) {
+        setDevMode(true)
+      }
+      return next
+    })
+  }
+
   useEffect(() => {
     if (selectedFinding) {
       const key = getAiCacheKey(selectedFinding)
@@ -60,6 +74,39 @@ export default function Page() {
       setAiError(null)
     }
   }, [selectedFinding, aiCache])
+
+  useEffect(() => {
+    const handleMouseMove = (event: MouseEvent) => {
+      setCursorPos({ x: event.clientX, y: event.clientY })
+    }
+
+    if (devMode && scanning) {
+      document.body.style.cursor = 'none'
+      window.addEventListener('mousemove', handleMouseMove)
+    }
+
+    return () => {
+      document.body.style.cursor = ''
+      window.removeEventListener('mousemove', handleMouseMove)
+    }
+  }, [devMode, scanning])
+
+  useEffect(() => {
+    if (!devMode || !scanning) {
+      setBubbleVisible(false)
+      return
+    }
+
+    const interval = window.setInterval(() => {
+      setBubbleVisible(true)
+      window.setTimeout(() => setBubbleVisible(false), 900)
+    }, 3200)
+
+    return () => {
+      window.clearInterval(interval)
+      setBubbleVisible(false)
+    }
+  }, [devMode, scanning])
 
   const getSnippet = (finding: Finding) => {
     const lines = fileContent.split('\n')
@@ -252,16 +299,31 @@ export default function Page() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 text-slate-900 dark:from-slate-950 dark:to-slate-900 dark:text-slate-100">
+    <div className="relative min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 text-slate-900 dark:from-slate-950 dark:to-slate-900 dark:text-slate-100">
       <main className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-6 py-12 lg:px-8">
         <header className="space-y-4">
           <div className="relative">
             <h1 className="text-5xl font-bold tracking-tight text-slate-950 dark:text-slate-50">Scrutiny</h1>
-            <p className="absolute top-2 right-0 text-2xl opacity-20">ฅ^•ﻌ•^ฅ</p>
+            <button
+              type="button"
+              onClick={handleCatClick}
+              className="absolute top-2 right-0 text-2xl opacity-90 transition hover:scale-110 focus:outline-none"
+              aria-label="Neko easter egg"
+            >
+              {devMode ? 'ᓚᘏᗢ' : 'ฅ^•ﻌ•^ฅ'}
+            </button>
           </div>
           <p className="max-w-2xl text-lg leading-8 text-slate-600 dark:text-slate-400">
             Understand code. Discover risks. Contribute confidently.
           </p>
+          {devMode ? (
+            <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-100 px-4 py-2 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+              <span className="font-semibold">neko mode enabled</span>
+              <span className="text-xs">ᓚᘏᗢ</span>
+            </div>
+          ) : catClicks > 0 ? (
+            <p className="text-sm text-slate-500 dark:text-slate-400">Cat clicks: {catClicks}/5</p>
+          ) : null}
         </header>
 
         <section className="space-y-4 rounded-3xl border border-slate-200 bg-white p-8 shadow-sm shadow-slate-200/50 dark:border-slate-800 dark:bg-slate-950">
@@ -537,6 +599,42 @@ export default function Page() {
           ) : null}
         </section>
       </main>
+
+      {devMode && scanning ? (
+        <>
+          <div
+            style={{
+              position: 'fixed',
+              top: cursorPos.y + 18,
+              left: cursorPos.x + 18,
+              transform: 'translate(-50%, -50%)',
+              pointerEvents: 'none',
+              zIndex: 60,
+              animation: 'spin 1.5s linear infinite'
+            }}
+            className="text-4xl"
+            aria-hidden="true"
+          >
+            ᓚᘏᗢ
+          </div>
+          {bubbleVisible ? (
+            <div
+              style={{
+                position: 'fixed',
+                top: cursorPos.y - 18,
+                left: cursorPos.x + 26,
+                pointerEvents: 'none',
+                zIndex: 60
+              }}
+              className="text-xs text-white bg-black/70 px-2 py-1 rounded-full opacity-90"
+              aria-hidden="true"
+            >
+              nya~
+            </div>
+          ) : null}
+          <style>{`@keyframes spin { from { transform: translate(-50%, -50%) rotate(0deg); } to { transform: translate(-50%, -50%) rotate(360deg); } }`}</style>
+        </>
+      ) : null}
     </div>
   )
 }
