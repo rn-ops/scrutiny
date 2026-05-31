@@ -28,6 +28,14 @@ export default function Page() {
   const [cursorPos, setCursorPos] = useState({ x: 0, y: 0 })
   const [bubbleVisible, setBubbleVisible] = useState(false)
 
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+
+  const scrollToSection = (id: string) => {
+    if (typeof document === 'undefined') return
+    const el = document.getElementById(id)
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
   const fileCount = files.length
   const findings = useMemo(() => {
     if (!selectedFile || !fileContent) {
@@ -53,6 +61,16 @@ export default function Page() {
     return total
   }, [findings])
   const getAiCacheKey = (finding: Finding) => `${finding.title}:${finding.code}`
+
+  const securityStoryStyles: Record<Finding['severity'], string> = {
+    CRITICAL: 'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950',
+    HIGH: 'border-orange-200 bg-orange-50 dark:border-orange-800 dark:bg-orange-950',
+    MEDIUM: 'border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950',
+    LOW: 'border-teal-200 bg-teal-50 dark:border-teal-900 dark:bg-teal-950'
+  }
+
+  const getSecurityStoryClasses = (severity: Finding['severity']) => securityStoryStyles[severity] ?? securityStoryStyles.MEDIUM
+  const selectedSecurityStory = selectedFinding?.securityStory ?? []
 
   const handleCatClick = () => {
     setCatClicks((prev) => {
@@ -300,7 +318,7 @@ export default function Page() {
 
   return (
     <div className="relative min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 text-slate-900 dark:from-slate-950 dark:to-slate-900 dark:text-slate-100">
-      <main className="mx-auto flex w-full max-w-6xl flex-col gap-10 px-6 py-12 lg:px-8">
+      <main className="mx-auto flex w-full max-w-[105rem] flex-col gap-12 px-6 py-14 lg:px-16">
         <header className="space-y-4">
           <div className="relative">
             <h1 className="text-5xl font-bold tracking-tight text-slate-950 dark:text-slate-50">Scrutiny</h1>
@@ -318,13 +336,38 @@ export default function Page() {
           </p>
           {devMode ? (
             <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-100 px-4 py-2 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
-              <span className="font-semibold">neko mode enabled</span>
+              <span className="font-semibold">n-mode enabled</span>
               <span className="text-xs">ᓚᘏᗢ</span>
             </div>
           ) : catClicks > 0 ? (
             <p className="text-sm text-slate-500 dark:text-slate-400">Cat clicks: {catClicks}/5</p>
           ) : null}
         </header>
+
+        {/* Collapsible sidebar index (thin) */}
+        <div className="hidden md:block">
+          <div className="fixed left-6 top-1/3 z-50">
+            <div className="flex flex-col items-center gap-3">
+              <button
+                onClick={() => setSidebarOpen(!sidebarOpen)}
+                aria-label="Toggle index"
+                className="rounded-full bg-white/90 dark:bg-slate-900/80 p-2 shadow"
+              >
+                {sidebarOpen ? '◀' : '▶'}
+              </button>
+              {sidebarOpen ? (
+                <div className="mt-2 w-44 rounded-2xl bg-white/90 dark:bg-slate-900/80 p-2 shadow-lg">
+                  <nav className="flex flex-col gap-1">
+                    <button onClick={() => scrollToSection('selected-file')} className="w-full text-left text-sm px-2 py-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded">Selected file</button>
+                    <button onClick={() => scrollToSection('findings')} className="w-full text-left text-sm px-2 py-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded">Findings</button>
+                    <button onClick={() => scrollToSection('repo-context')} className="w-full text-left text-sm px-2 py-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded">Repository Context</button>
+                    <button onClick={() => scrollToSection('ai-explain')} className="w-full text-left text-sm px-2 py-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded">AI Explanation</button>
+                  </nav>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
 
         <section className="space-y-4 rounded-3xl border border-slate-200 bg-white p-8 shadow-sm shadow-slate-200/50 dark:border-slate-800 dark:bg-slate-950">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
@@ -416,7 +459,7 @@ export default function Page() {
               ) : null}
             </div>
 
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
+            <div id="selected-file" className="rounded-3xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900 space-y-6">
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <p className="text-sm uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">Selected file</p>
@@ -425,111 +468,121 @@ export default function Page() {
               </div>
 
               {fileError ? (
-                <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-200">
+                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-200">
                   {fileError}
                 </div>
               ) : null}
 
-              {fileContent ? (
-                <>
-                  <div className="mt-5 overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 p-5 text-sm leading-6 text-slate-900 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
-                    <pre className="whitespace-pre-wrap break-words font-mono">{fileContent}</pre>
+              {findings.length > 0 ? (
+                <div id="findings" className="space-y-4">
+                  <div>
+                    <p className="text-sm uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400 font-semibold">Findings</p>
+                    <div className="mt-4 space-y-3">
+                      {findings.map((finding, index) => (
+                        <div 
+                          key={`${finding.file}-${finding.line}-${index}`} 
+                          className="relative rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900 cursor-pointer transition hover:border-slate-300 dark:hover:border-slate-700" 
+                          onClick={() => setSelectedFinding(finding)}
+                        >
+                          <div className="flex justify-between items-start gap-4">
+                            <div>
+                              <p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
+                                {finding.severity}
+                              </p>
+                              <p className="mt-1 font-semibold text-slate-900 dark:text-slate-100">
+                                {finding.title}
+                              </p>
+                              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                Line {finding.line}
+                              </p>
+                            </div>
+
+                            <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
+                              {selectedFinding === finding ? (
+                                <button
+                                  type="button"
+                                  onClick={handleAiExplain}
+                                  disabled={aiLoading}
+                                  className="inline-flex h-8 items-center justify-center rounded-xl border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-900 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-900"
+                                >
+                                  {aiLoading ? 'Explaining...' : 'Explain'}
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
+
+                          <p className="mt-4 text-sm text-slate-700 dark:text-slate-300">
+                            Matched: <span className="font-mono text-xs">{finding.matched}</span>
+                          </p>
+                          <p className="mt-2 text-xs text-slate-600 dark:text-slate-400 font-mono bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">
+                            {finding.code}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
                   </div>
 
-                  <div className="mt-6 rounded-3xl border border-slate-200 bg-slate-50 p-5 dark:border-slate-800 dark:bg-slate-950">
-                    <p className="text-sm uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">Findings</p>
-                    {findings.length > 0 ? (
-  <div className="mt-4 space-y-3">
-    {findings.map((finding, index) => (
-      <div 
-        key={`${finding.file}-${finding.line}-${index}`} 
-        className="relative rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900 cursor-pointer transition hover:border-slate-300 dark:hover:border-slate-700" 
-        onClick={() => setSelectedFinding(finding)}
-      >
-        {/* Top Row Header Container */}
-        <div className="flex justify-between items-start gap-4">
-          <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
-              {finding.severity}
-            </p>
-            <p className="mt-1 font-semibold text-slate-900 dark:text-slate-100">
-              {finding.title}
-            </p>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              Line {finding.line}
-            </p>
-          </div>
-
-          {/* AI Button Context Container (Stays Top-Right) */}
-          <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
-            {selectedFinding === finding ? (
-              <button
-                type="button"
-                onClick={handleAiExplain}
-                disabled={aiLoading}
-                className="inline-flex h-8 items-center justify-center rounded-xl border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-900 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-900"
-              >
-                {aiLoading ? 'Explaining...' : 'Explain with AI'}
-              </button>
-            ) : null}
-            {loadingFile ? (
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                Loading
-              </span>
-            ) : null}
-          </div>
-        </div>
-
-        {/* Lower Finding Details */}
-        <p className="mt-4 text-sm text-slate-700 dark:text-slate-300">
-          Matched: <span className="font-mono">{finding.matched}</span>
-        </p>
-        <p className="mt-2 text-xs text-slate-600 dark:text-slate-400 font-mono bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">
-          {finding.code}
-        </p>
-      </div>
-    ))}
-  </div>
-) : (
-  <p className="mt-4 text-sm text-slate-600 dark:text-slate-400">
-    No suspicious strings found in this file.
-  </p>
-)}
-
-
-                    {selectedFinding && explanations[selectedFinding.title] ? (
-                      <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950">
-                        <p className="text-xs uppercase tracking-[0.2em] text-blue-600 dark:text-blue-400 font-semibold">Explanation</p>
-                        <div className="mt-3 space-y-2">
-                          <div>
-                            <p className="text-xs uppercase tracking-[0.2em] text-blue-600 dark:text-blue-400">Why</p>
-                            <p className="mt-1 text-sm text-blue-900 dark:text-blue-100">{explanations[selectedFinding.title].why}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs uppercase tracking-[0.2em] text-red-600 dark:text-red-400">Impact</p>
-                            <p className="mt-1 text-sm text-red-900 dark:text-red-100">{explanations[selectedFinding.title].impact}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs uppercase tracking-[0.2em] text-green-600 dark:text-green-400">Fix</p>
-                            <p className="mt-1 text-sm text-green-900 dark:text-green-100">{explanations[selectedFinding.title].fix}</p>
-                          </div>
+                  {selectedFinding && explanations[selectedFinding.title] ? (
+                    <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950">
+                      <p className="text-xs uppercase tracking-[0.2em] text-blue-600 dark:text-blue-400 font-semibold">Explanation</p>
+                      <div className="mt-3 space-y-2">
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.2em] text-blue-600 dark:text-blue-400">Why</p>
+                          <p className="mt-1 text-sm text-blue-900 dark:text-blue-100">{explanations[selectedFinding.title].why}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.2em] text-red-600 dark:text-red-400">Impact</p>
+                          <p className="mt-1 text-sm text-red-900 dark:text-red-100">{explanations[selectedFinding.title].impact}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.2em] text-green-600 dark:text-green-400">Fix</p>
+                          <p className="mt-1 text-sm text-green-900 dark:text-green-100">{explanations[selectedFinding.title].fix}</p>
                         </div>
                       </div>
-                    ) : null}
+                    </div>
+                  ) : null}
 
-                    {findings.length > 0 ? (
-                      <div className="mt-4 rounded-2xl border border-orange-200 bg-orange-50 p-4 dark:border-orange-800 dark:bg-orange-950">
-                        <p className="text-xs uppercase tracking-[0.2em] text-orange-600 dark:text-orange-400 font-semibold">Risk Score</p>
-                        <p className="mt-2 text-3xl font-bold text-orange-900 dark:text-orange-100">{riskScore}</p>
-                        <p className="mt-1 text-xs text-orange-700 dark:text-orange-200">
-                          {findings.filter(f => f.severity === 'CRITICAL').length} Critical &bull; {findings.filter(f => f.severity === 'HIGH').length} High &bull; {findings.filter(f => f.severity === 'MEDIUM').length} Medium &bull; {findings.filter(f => f.severity === 'LOW').length} Low
-                        </p>
+                  {selectedFinding?.securityStory ? (
+                    <div className={`rounded-2xl border p-4 ${getSecurityStoryClasses(selectedFinding.severity)}`}>
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.2em] text-slate-600 dark:text-slate-400 font-semibold">Security Story</p>
+                        <p className="mt-2 text-xs font-semibold text-slate-700 dark:text-slate-300">Confidence: {selectedFinding.storyConfidence ?? 'Medium'}</p>
                       </div>
-                    ) : null}
+                      <div className="mt-4 space-y-3 text-sm text-slate-900 dark:text-slate-100">
+                        {selectedSecurityStory.map((step, index) => (
+                          <div key={`${step}-${index}`} className="space-y-1">
+                            <div>{step}</div>
+                            {index !== selectedSecurityStory.length - 1 ? (
+                              <div className="text-slate-500 dark:text-slate-400">↓</div>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                      {selectedFinding.scenario ? (
+                        <div className="mt-4 rounded-2xl border border-slate-300 bg-white/80 p-4 dark:border-slate-700 dark:bg-slate-950">
+                          <p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400 font-semibold">Scenario</p>
+                          <p className="mt-2 text-sm text-slate-700 dark:text-slate-300">{selectedFinding.scenario}</p>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4 dark:border-orange-800 dark:bg-orange-950">
+                    <p className="text-xs uppercase tracking-[0.2em] text-orange-600 dark:text-orange-400 font-semibold">Risk Score</p>
+                    <p className="mt-2 text-3xl font-bold text-orange-900 dark:text-orange-100">{riskScore}</p>
+                    <p className="mt-1 text-xs text-orange-700 dark:text-orange-200">
+                      {findings.filter(f => f.severity === 'CRITICAL').length} Critical &bull; {findings.filter(f => f.severity === 'HIGH').length} High &bull; {findings.filter(f => f.severity === 'MEDIUM').length} Medium &bull; {findings.filter(f => f.severity === 'LOW').length} Low
+                    </p>
                   </div>
-                </>
+                </div>
+              ) : null}
+
+              {fileContent ? (
+                <div className="overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 p-5 text-sm leading-6 text-slate-900 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
+                  <pre className="whitespace-pre-wrap break-words font-mono">{fileContent}</pre>
+                </div>
               ) : (
-                <div className="mt-5 rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+                <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
                   Click a file to load its contents.
                 </div>
               )}
@@ -537,7 +590,7 @@ export default function Page() {
           </div>
 
           {files.length > 0 ? (
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
+            <div id="repo-context" className="rounded-3xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
               <div className="flex items-center justify-between gap-4 mb-4">
                 <div>
                   <p className="text-sm uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">Repository Context</p>
@@ -569,7 +622,7 @@ export default function Page() {
               )}
 
               {(aiExplanation || aiLoading || aiError) ? (
-                <div className="mt-6 rounded-3xl border border-violet-200 bg-violet-50 p-5 dark:border-violet-800 dark:bg-violet-950">
+                <div id="ai-explain" className="mt-6 rounded-3xl border border-violet-200 bg-violet-50 p-5 dark:border-violet-800 dark:bg-violet-950">
                   <div className="flex items-center justify-between gap-4 mb-3">
                     <div>
                       <p className="text-sm uppercase tracking-[0.3em] text-violet-500 dark:text-violet-300">AI Explanation</p>

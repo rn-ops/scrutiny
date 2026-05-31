@@ -22,15 +22,25 @@ export function parseGithubRepoUrl(value: string) {
 }
 
 async function fetchJson(url: string, options: RequestInit = {}) {
-  const headers: HeadersInit = {
-    Accept: 'application/vnd.github+json',
-    ...options.headers,
-    Authorization: `Bearer ${GITHUB_TOKEN}`
-  } as HeadersInit;
+  const headers = new Headers(options.headers)
+  headers.set('Accept', 'application/vnd.github+json')
+  headers.set('User-Agent', 'Scrutiny')
+
+  if (typeof GITHUB_TOKEN === 'string' && GITHUB_TOKEN.trim()) {
+    headers.set('Authorization', `Bearer ${GITHUB_TOKEN}`)
+  }
 
   const response = await fetch(url, { ...options, headers })
   if (!response.ok) {
-    throw new Error(`GitHub API request failed: ${response.status}`)
+    const body = await response.text()
+    const rateLimitRemaining = response.headers.get('x-ratelimit-remaining')
+    const rateLimitMessage = response.status === 403 && rateLimitRemaining === '0'
+      ? ' GitHub API rate limit appears to be exceeded. Set a valid GITHUB_TOKEN in your environment to continue.'
+      : ''
+
+    throw new Error(
+      `GitHub API request failed: ${response.status} ${response.statusText}.${rateLimitMessage} ${body}`.trim()
+    )
   }
 
   return response.json()

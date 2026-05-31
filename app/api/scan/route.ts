@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Scan route error:', error)
     return NextResponse.json(
-      { success: false, message: 'Unable to fetch repository files' },
+      { success: false, message: error instanceof Error ? error.message : 'Unable to fetch repository files' },
       { status: 502 }
     )
   }
