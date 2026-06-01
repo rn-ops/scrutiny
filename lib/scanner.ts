@@ -8,6 +8,15 @@ export type Pattern = {
   regex: RegExp
 }
 
+export type AttackChain = {
+  entry: string
+  entryEvidence?: string
+  sink: string
+  sinkEvidence?: string
+  impact: string
+  location: string
+}
+
 export type Finding = {
   file: string
   line: number
@@ -19,6 +28,7 @@ export type Finding = {
   securityStory?: string[]
   storyConfidence?: 'Low' | 'Medium' | 'High'
   scenario?: string
+  attackChain?: AttackChain
 }
 
 // ─────────────────────────────────────────────
@@ -622,6 +632,83 @@ function buildScenario(story: string[], title: string, sourceLabel: string | nul
   return `An attacker supplies a crafted value through ${src}. The value reaches ${sink} without validation, creating a potential ${outcome.toLowerCase()}.`;
 }
 
+function simplifySourceDescription(source: string | null) {
+  if (!source) return { entry: 'User Input', evidence: undefined }
+
+  if (/req\.query|request\.args|Request\.Query/i.test(source)) {
+    return { entry: 'User Input', evidence: 'query parameter' }
+  }
+
+  if (/req\.body|request\.json|request\.form|body\./i.test(source)) {
+    return { entry: 'User Input', evidence: 'request body' }
+  }
+
+  if (/req\.params|Request\.Params|request\.getParameter/i.test(source)) {
+    return { entry: 'User Input', evidence: 'route parameter' }
+  }
+
+  if (/process\.env/i.test(source)) {
+    return { entry: 'Environment Input', evidence: 'environment variable' }
+  }
+
+  if (/\$_GET/i.test(source)) {
+    return { entry: 'User Input', evidence: 'GET parameter' }
+  }
+
+  if (/\$_POST/i.test(source)) {
+    return { entry: 'User Input', evidence: 'POST parameter' }
+  }
+
+  if (/\$_REQUEST/i.test(source)) {
+    return { entry: 'User Input', evidence: 'request parameter' }
+  }
+
+  if (/\$_COOKIE/i.test(source)) {
+    return { entry: 'User Input', evidence: 'cookie value' }
+  }
+
+  return { entry: 'User Input', evidence: source }
+}
+
+function extractSinkEvidence(matched: string) {
+  const match = matched.match(/\b(subprocess\.\w+|dangerouslySetInnerHTML|document\.write|yaml\.load|pickle\.loads|unserialize|mysqli_query|new\s+SqlCommand|Path\.Combine|File\.Open|Runtime\.getRuntime\(\)\.exec|ProcessBuilder|Process\.Start|exec|spawn|shell_exec|system|passthru|popen|eval|assert)\b/i)
+  return match ? match[1] : undefined
+}
+
+function buildImpactLabel(outcome: string) {
+  const raw = stripEmoji(outcome)
+
+  if (/Shell Access/i.test(raw)) return 'Remote Shell Access'
+  if (/Data Exposure/i.test(raw)) return 'Data Exposure'
+  if (/Arbitrary Code/i.test(raw) || /Code Execution/i.test(raw)) return 'Remote Code Execution'
+  if (/File Disclosure/i.test(raw)) return 'File Disclosure'
+  if (/XSS/i.test(raw)) return 'Cross-site Scripting'
+  if (/Prototype/i.test(raw)) return 'Prototype Pollution'
+
+  return raw
+}
+
+function buildAttackChain(
+  story: string[],
+  matched: string,
+  source: string | null,
+  file: string,
+  line: number
+): AttackChain {
+  const entry = simplifySourceDescription(source)
+  const sinkLabel = story[1] ? stripEmoji(story[1]) : 'Vulnerable sink'
+  const impactLabel = buildImpactLabel(story[2] ?? story[1] ?? 'Impact')
+
+  return {
+    entry: entry.entry,
+    entryEvidence: entry.evidence,
+    sink: sinkLabel,
+    sinkEvidence: extractSinkEvidence(matched),
+    impact: impactLabel,
+    location: `${file}:${line}`
+  }
+}
+
 // ─────────────────────────────────────────────
 // CONFIDENCE SCORING
 // ─────────────────────────────────────────────
@@ -662,7 +749,7 @@ function inferConfidence(
 // SECURITY STORY ASSEMBLY
 // ─────────────────────────────────────────────
 
-function buildSecurityStory(title: string, matched: string, context: string) {
+function buildSecurityStory(title: string, matched: string, context: string, file: string, line: number) {
   const baseStory = SECURITY_STORIES[title] ?? ['👤 User Input', `⚠ ${title}`, '🚨 Potential Impact'];
   const source    = findConcreteSource(context) || findConcreteSource(matched);
   const story     = [...baseStory];
@@ -671,8 +758,9 @@ function buildSecurityStory(title: string, matched: string, context: string) {
 
   const confidence = inferConfidence(title, source, context);
   const scenario   = buildScenario(story, title, source);
+  const attackChain = buildAttackChain(story, matched, source, file, line);
 
-  return { securityStory: story, storyConfidence: confidence, scenario };
+  return { securityStory: story, storyConfidence: confidence, scenario, attackChain };
 }
 
 // ─────────────────────────────────────────────
@@ -776,7 +864,7 @@ export function scanFiles(files: Array<{ file: string; content: string }>): Find
             matched: match[0].trim(),
             code: formatCodeSnippet(line),
             context: contextSnippet,
-            ...buildSecurityStory(pattern.type, match[0].trim(), contextSnippet)
+            ...buildSecurityStory(pattern.type, match[0].trim(), contextSnippet, file, i + 1)
           });
 
           // One finding per line — take the highest-priority match and move on

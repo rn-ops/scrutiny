@@ -47,32 +47,19 @@ export default function Page() {
 
 
   /*
-  * Calculate a normalized risk score between 0 and 100.
-  * Critical findings are weighted highest, and the score is capped so
-  * each selected file can never exceed 100.
+  * Calculate the overall risk score based on the severity of findings
+  * The risk score is not out of 100.
+  * it's a raw sum: CRITICAL×10 + HIGH×5 + MEDIUM×2 + LOW×1.
+  * For example, 1 CRITICAL + 2 HIGH = 20.
   */
-  const rawRiskScore = useMemo(() => {
-    const severityWeights = { CRITICAL: 40, HIGH: 20, MEDIUM: 10, LOW: 5 }
-    return findings.reduce((sum, finding) => {
+  const riskScore = useMemo(() => {
+    const severityWeights = { CRITICAL: 10, HIGH: 5, MEDIUM: 2, LOW: 1 }
+    const total = findings.reduce((sum, finding) => {
       const weight = severityWeights[finding.severity as keyof typeof severityWeights] || 0
       return sum + weight
     }, 0)
+    return total
   }, [findings])
-
-  const riskScore = useMemo(() => {
-    if (findings.length === 0) return 0
-    const maxScore = findings.length * 40
-    return Math.min(100, Math.round((rawRiskScore / maxScore) * 100))
-  }, [findings.length, rawRiskScore])
-
-  const getRiskLabel = (score: number) => {
-    if (score === 0) return 'None'
-    if (score < 25) return 'Low'
-    if (score < 50) return 'Moderate'
-    if (score < 75) return 'High'
-    return 'Severe'
-  }
-
   const getAiCacheKey = (finding: Finding) => `${finding.title}:${finding.code}`
 
   const securityStoryStyles: Record<Finding['severity'], string> = {
@@ -84,6 +71,7 @@ export default function Page() {
 
   const getSecurityStoryClasses = (severity: Finding['severity']) => securityStoryStyles[severity] ?? securityStoryStyles.MEDIUM
   const selectedSecurityStory = selectedFinding?.securityStory ?? []
+  const selectedAttackChain = selectedFinding?.attackChain
 
   const handleCatClick = () => {
     setCatClicks((prev) => {
@@ -331,7 +319,7 @@ export default function Page() {
 
   return (
     <div className="relative min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 text-slate-900 dark:from-slate-950 dark:to-slate-900 dark:text-slate-100">
-      <main className="mx-auto flex w-full max-w-[105rem] flex-col gap-12 px-6 py-14 lg:px-16">
+      <main className="mx-auto flex w-full max-w-[105rem] flex-col gap-4 px-6 py-14 lg:px-16">
         <header className="space-y-4">
           <div className="relative">
             <h1 className="text-5xl font-bold tracking-tight text-slate-950 dark:text-slate-50">Scrutiny</h1>
@@ -382,7 +370,7 @@ export default function Page() {
           </div>
         </div>
 
-        <section className="space-y-4 rounded-3xl border border-slate-200 bg-white p-8 shadow-sm shadow-slate-200/50 dark:border-slate-800 dark:bg-slate-950">
+        <section className="space-y-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/50 dark:border-slate-800 dark:bg-slate-950">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
             <input
               value={repoUrl}
@@ -555,7 +543,67 @@ export default function Page() {
                     </div>
                   ) : null}
 
-                  {selectedFinding?.securityStory ? (
+                  {selectedAttackChain ? (
+                    <div className={`rounded-2xl border p-4 ${getSecurityStoryClasses(selectedFinding.severity)}`}>
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.2em] text-slate-600 dark:text-slate-400 font-semibold">Attack Chain</p>
+                          <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-slate-100">3 Steps</p>
+                        </div>
+                        <div className="space-y-1 text-right">
+                          <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">Severity</p>
+                          <p className="font-semibold text-slate-900 dark:text-slate-100">{selectedFinding.severity}</p>
+                        </div>
+                        <div className="space-y-1 text-right">
+                          <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">Potential Impact</p>
+                          <p className="font-semibold text-slate-900 dark:text-slate-100">{selectedAttackChain.impact}</p>
+                        </div>
+                      </div>
+
+                      <div className="mt-5 grid gap-4">
+                        <div className="rounded-2xl border border-slate-300 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-950">
+                          <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">ENTRY POINT</p>
+                          <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{selectedAttackChain.entry}</p>
+                          {selectedAttackChain.entryEvidence ? (
+                            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">({selectedAttackChain.entryEvidence})</p>
+                          ) : null}
+                        </div>
+
+                        <div className="flex flex-col items-center text-[11px] uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">
+                          <span>│</span>
+                          <span className="mt-1">├── reaches</span>
+                          <span className="mt-1">▼</span>
+                        </div>
+
+                        <div className="rounded-2xl border-2 border-orange-500 bg-orange-100 p-4 shadow-lg shadow-orange-200/50 dark:border-orange-400 dark:bg-orange-950">
+                          <p className="text-[10px] uppercase tracking-[0.3em] text-orange-700 dark:text-orange-300">VULNERABLE SINK</p>
+                          <p className="mt-2 text-sm font-semibold text-orange-900 dark:text-orange-100">{selectedAttackChain.sink}</p>
+                          {selectedAttackChain.sinkEvidence ? (
+                            <p className="mt-1 text-xs text-orange-700 dark:text-orange-300">({selectedAttackChain.sinkEvidence})</p>
+                          ) : null}
+                          <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{selectedAttackChain.location}</p>
+                        </div>
+
+                        <div className="flex flex-col items-center text-[11px] uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">
+                          <span>│</span>
+                          <span className="mt-1">├── enables</span>
+                          <span className="mt-1">▼</span>
+                        </div>
+
+                        <div className="rounded-2xl border border-slate-300 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-950">
+                          <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">IMPACT</p>
+                          <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{selectedAttackChain.impact}</p>
+                        </div>
+                      </div>
+
+                      {selectedFinding.scenario ? (
+                        <div className="mt-4 rounded-2xl border border-slate-300 bg-white/80 p-4 dark:border-slate-700 dark:bg-slate-950">
+                          <p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400 font-semibold">Scenario</p>
+                          <p className="mt-2 text-sm text-slate-700 dark:text-slate-300">{selectedFinding.scenario}</p>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : selectedFinding?.securityStory ? (
                     <div className={`rounded-2xl border p-4 ${getSecurityStoryClasses(selectedFinding.severity)}`}>
                       <div>
                         <p className="text-xs uppercase tracking-[0.2em] text-slate-600 dark:text-slate-400 font-semibold">Security Story</p>
@@ -581,20 +629,10 @@ export default function Page() {
                   ) : null}
 
                   <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4 dark:border-orange-800 dark:bg-orange-950">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.2em] text-orange-600 dark:text-orange-400 font-semibold">Risk Score</p>
-                        <p className="mt-2 text-3xl font-bold text-orange-900 dark:text-orange-100">{riskScore} / 100</p>
-                      </div>
-                      <span className="rounded-full bg-orange-100 px-3 py-1 text-xs font-semibold text-orange-800 dark:bg-orange-900 dark:text-orange-100">
-                        {getRiskLabel(riskScore)}
-                      </span>
-                    </div>
-                    <p className="mt-3 text-xs text-orange-700 dark:text-orange-200">
+                    <p className="text-xs uppercase tracking-[0.2em] text-orange-600 dark:text-orange-400 font-semibold">Risk Score</p>
+                    <p className="mt-2 text-3xl font-bold text-orange-900 dark:text-orange-100">{riskScore}</p>
+                    <p className="mt-1 text-xs text-orange-700 dark:text-orange-200">
                       {findings.filter(f => f.severity === 'CRITICAL').length} Critical &bull; {findings.filter(f => f.severity === 'HIGH').length} High &bull; {findings.filter(f => f.severity === 'MEDIUM').length} Medium &bull; {findings.filter(f => f.severity === 'LOW').length} Low
-                    </p>
-                    <p className="mt-2 text-[11px] uppercase tracking-[0.2em] text-orange-700 dark:text-orange-300">
-                      Normalized by severity and capped at 100 per file.
                     </p>
                   </div>
                 </div>
