@@ -47,19 +47,32 @@ export default function Page() {
 
 
   /*
-  * Calculate the overall risk score based on the severity of findings
-  * The risk score is not out of 100.
-  * it's a raw sum: CRITICAL×10 + HIGH×5 + MEDIUM×2 + LOW×1.
-  * For example, 1 CRITICAL + 2 HIGH = 20.
+  * Calculate a normalized risk score between 0 and 100.
+  * Critical findings are weighted highest, and the score is capped so
+  * each selected file can never exceed 100.
   */
-  const riskScore = useMemo(() => {
-    const severityWeights = { CRITICAL: 10, HIGH: 5, MEDIUM: 2, LOW: 1 }
-    const total = findings.reduce((sum, finding) => {
+  const rawRiskScore = useMemo(() => {
+    const severityWeights = { CRITICAL: 40, HIGH: 20, MEDIUM: 10, LOW: 5 }
+    return findings.reduce((sum, finding) => {
       const weight = severityWeights[finding.severity as keyof typeof severityWeights] || 0
       return sum + weight
     }, 0)
-    return total
   }, [findings])
+
+  const riskScore = useMemo(() => {
+    if (findings.length === 0) return 0
+    const maxScore = findings.length * 40
+    return Math.min(100, Math.round((rawRiskScore / maxScore) * 100))
+  }, [findings.length, rawRiskScore])
+
+  const getRiskLabel = (score: number) => {
+    if (score === 0) return 'None'
+    if (score < 25) return 'Low'
+    if (score < 50) return 'Moderate'
+    if (score < 75) return 'High'
+    return 'Severe'
+  }
+
   const getAiCacheKey = (finding: Finding) => `${finding.title}:${finding.code}`
 
   const securityStoryStyles: Record<Finding['severity'], string> = {
@@ -568,10 +581,20 @@ export default function Page() {
                   ) : null}
 
                   <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4 dark:border-orange-800 dark:bg-orange-950">
-                    <p className="text-xs uppercase tracking-[0.2em] text-orange-600 dark:text-orange-400 font-semibold">Risk Score</p>
-                    <p className="mt-2 text-3xl font-bold text-orange-900 dark:text-orange-100">{riskScore}</p>
-                    <p className="mt-1 text-xs text-orange-700 dark:text-orange-200">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.2em] text-orange-600 dark:text-orange-400 font-semibold">Risk Score</p>
+                        <p className="mt-2 text-3xl font-bold text-orange-900 dark:text-orange-100">{riskScore} / 100</p>
+                      </div>
+                      <span className="rounded-full bg-orange-100 px-3 py-1 text-xs font-semibold text-orange-800 dark:bg-orange-900 dark:text-orange-100">
+                        {getRiskLabel(riskScore)}
+                      </span>
+                    </div>
+                    <p className="mt-3 text-xs text-orange-700 dark:text-orange-200">
                       {findings.filter(f => f.severity === 'CRITICAL').length} Critical &bull; {findings.filter(f => f.severity === 'HIGH').length} High &bull; {findings.filter(f => f.severity === 'MEDIUM').length} Medium &bull; {findings.filter(f => f.severity === 'LOW').length} Low
+                    </p>
+                    <p className="mt-2 text-[11px] uppercase tracking-[0.2em] text-orange-700 dark:text-orange-300">
+                      Normalized by severity and capped at 100 per file.
                     </p>
                   </div>
                 </div>
