@@ -2,8 +2,11 @@
 
 import { useMemo, useState, useEffect } from 'react'
 import { scanFiles, Finding, explanations } from '@/lib/scanner'
+import { buildFileIntelligence, FileIntelligence } from '@/lib/fileIntelligence'
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import ReactFlow from 'reactflow'
+import 'reactflow/dist/style.css'
 
 export default function Page() {
   const [repoUrl, setRepoUrl] = useState('')
@@ -11,6 +14,8 @@ export default function Page() {
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
   const [fileContent, setFileContent] = useState('')
   const [contentCollapsed, setContentCollapsed] = useState(false)
+  const [fileIntelligenceOpen, setFileIntelligenceOpen] = useState(false)
+  const [skipRepoContext, setSkipRepoContext] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [loadingFile, setLoadingFile] = useState(false)
   const [status, setStatus] = useState('Waiting for repository...')
@@ -62,6 +67,89 @@ export default function Page() {
     return total
   }, [findings])
   const getAiCacheKey = (finding: Finding) => `${finding.title}:${finding.code}`
+
+  const fileIntelligence = useMemo<FileIntelligence | null>(() => {
+    return buildFileIntelligence(selectedFile, fileContent, findings)
+  }, [selectedFile, fileContent, findings])
+
+  const fileIntelligenceNodes = useMemo(() => {
+    if (!fileIntelligence?.callGraph?.length) return []
+    const uniqueNames = Array.from(new Set(fileIntelligence.callGraph.flatMap(edge => [edge.caller, edge.callee])))
+    return uniqueNames.map((name, index) => ({
+      id: name,
+      position: { x: (index % 3) * 220, y: Math.floor(index / 3) * 140 },
+      data: { label: name },
+      style: { borderRadius: 16, padding: 10, background: '#f8fafc', border: '1px solid #cbd5e1', color: '#0f172a' }
+    }))
+  }, [fileIntelligence?.callGraph])
+
+  const fileIntelligenceEdges = useMemo(() => {
+    if (!fileIntelligence?.callGraph?.length) return []
+    return fileIntelligence.callGraph.map((edge, index) => ({
+      id: `edge-${index}`,
+      source: edge.caller,
+      target: edge.callee,
+      animated: true,
+      style: { stroke: '#fb923c' }
+    }))
+  }, [fileIntelligence?.callGraph])
+
+  const defaultEdgeOptions = useMemo(() => ({ animated: true, style: { stroke: '#fb923c' } }), [])
+
+  const inferImportDomain = (importPath: string) => {
+    if (importPath.startsWith('.') || importPath.startsWith('/')) return 'local'
+    if (importPath.includes('react')) return 'UI'
+    if (importPath.includes('next')) return 'framework'
+    if (importPath.includes('express') || importPath.includes('axios') || importPath.includes('http')) return 'network'
+    if (importPath.includes('jsonwebtoken') || importPath.includes('bcrypt')) return 'auth'
+    return 'dependency'
+  }
+
+  const inferFunctionRole = (fnName: string) => {
+    const lower = fnName.toLowerCase()
+    if (lower.includes('render') || lower.includes('component')) return 'UI render / component'
+    if (lower.includes('handle') || lower.includes('on')) return 'Event or request handler'
+    if (lower.includes('fetch') || lower.includes('load') || lower.includes('get')) return 'Data retrieval'
+    if (lower.includes('save') || lower.includes('set') || lower.includes('update')) return 'State or persistence updater'
+    if (lower.includes('validate') || lower.includes('check')) return 'Validation / guard'
+    return 'Utility helper'
+  }
+
+  const renderCallTree = (graph: Array<{ caller: string; callee: string }>) => {
+    if (!graph.length) {
+      return 'No call flow detected.'
+    }
+
+    const callers = graph.reduce<Record<string, string[]>>((acc, edge) => {
+      acc[edge.caller] = [...(acc[edge.caller] || []), edge.callee]
+      return acc
+    }, {})
+
+    const roots = graph.map(edge => edge.caller).filter(caller => !graph.some(edge => edge.callee === caller))
+    const renderNode = (name: string, prefix = ''): string => {
+      const children = callers[name] ?? []
+      if (!children.length) return `${prefix}${name}`
+      return `${prefix}${name}\n${children.map((child, index) => renderNode(child, `${prefix}${index === children.length - 1 ? '└── ' : '├── '}`)).join('\n')}`
+    }
+
+    const uniqueRoots = Array.from(new Set(roots.length ? roots : graph.map(edge => edge.caller)))
+    return uniqueRoots.map(root => renderNode(root)).join('\n')
+  }
+
+  const buildNodes = (graph: Array<{ caller: string; callee: string }>) => {
+    const uniqueNames = Array.from(new Set(graph.flatMap(edge => [edge.caller, edge.callee])))
+    return uniqueNames.map((name, index) => ({ id: name, position: { x: (index % 4) * 160, y: Math.floor(index / 4) * 120 }, data: { label: name } }))
+  }
+
+  const buildEdges = (graph: Array<{ caller: string; callee: string }>) => {
+    return graph.map((edge, index) => ({ id: `edge-${index}`, source: edge.caller, target: edge.callee }))
+  }
+
+  useEffect(() => {
+    if (!selectedFile || !fileContent) {
+      setFileIntelligenceOpen(false)
+    }
+  }, [selectedFile, fileContent])
 
   const securityStoryStyles: Record<Finding['severity'], string> = {
     CRITICAL: 'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950',
@@ -245,35 +333,39 @@ export default function Page() {
       setFiles(payload.files ?? [])
       setStatus(`Found ${payload.files?.length ?? 0} files`)
 
-      // Fetch repository context with Gemini
-      setLoadingContext(true)
-      try {
-        const readmeResponse = await fetch('/api/file', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: repoUrl.trim(), path: 'README.md' })
-        })
-        const readmePayload = await readmeResponse.json()
-        const readme = readmePayload.success ? readmePayload.content : null
-
-        const contextResponse = await fetch('/api/context', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            url: repoUrl.trim(),
-            files: payload.files ?? [],
-            readme
-          })
-        })
-
-        const contextPayload = await contextResponse.json()
-        if (contextPayload.success) {
-          setRepoContext(contextPayload.context)
-        }
-      } catch (e) {
-        console.error('Failed to fetch context:', e)
-      } finally {
+      if (skipRepoContext) {
         setLoadingContext(false)
+        setRepoContext(null)
+      } else {
+        setLoadingContext(true)
+        try {
+          const readmeResponse = await fetch('/api/file', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: repoUrl.trim(), path: 'README.md' })
+          })
+          const readmePayload = await readmeResponse.json()
+          const readme = readmePayload.success ? readmePayload.content : null
+
+          const contextResponse = await fetch('/api/context', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              url: repoUrl.trim(),
+              files: payload.files ?? [],
+              readme
+            })
+          })
+
+          const contextPayload = await contextResponse.json()
+          if (contextPayload.success) {
+            setRepoContext(contextPayload.context)
+          }
+        } catch (e) {
+          console.error('Failed to fetch context:', e)
+        } finally {
+          setLoadingContext(false)
+        }
       }
     } catch {
       setError('Unable to reach the scan endpoint. Check the URL and try again.')
@@ -386,13 +478,27 @@ export default function Page() {
               placeholder="https://github.com/owner/repo"
               className="flex-1 rounded-2xl border border-slate-300 bg-slate-50 px-5 py-3 text-base text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200/50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-slate-500 dark:focus:ring-slate-700/50"
             />
-            <button
-              onClick={handleScan}
-              disabled={scanning}
-              className="inline-flex h-12 items-center justify-center rounded-2xl bg-slate-950 px-8 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-100 dark:text-slate-950 dark:hover:bg-slate-200"
-            >
-              {scanning ? 'Scanning...' : 'Scan'}
-            </button>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <button
+                onClick={handleScan}
+                disabled={scanning}
+                className="inline-flex h-12 items-center justify-center rounded-2xl bg-slate-950 px-8 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-100 dark:text-slate-950 dark:hover:bg-slate-200"
+              >
+                {scanning ? 'Scanning...' : 'Scan'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSkipRepoContext((prev) => !prev)}
+                disabled={scanning}
+                className={`inline-flex h-12 items-center justify-center rounded-2xl border px-5 text-sm font-semibold transition ${
+                  skipRepoContext
+                    ? 'border-red-300 bg-red-50 text-red-900 hover:bg-red-100 dark:border-red-700 dark:bg-red-950 dark:text-red-200 dark:hover:bg-red-900'
+                    : 'border-slate-300 bg-slate-50 text-slate-900 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                {skipRepoContext ? 'Repo context off' : 'Disable repo context'}
+              </button>
+            </div>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-center">
@@ -468,11 +574,20 @@ export default function Page() {
             </div>
 
             <div id="selected-file" className="rounded-3xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900 space-y-6">
-              <div className="flex items-center justify-between gap-4">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-sm uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">Selected file</p>
                   <p className="mt-2 font-mono text-base text-slate-900 dark:text-slate-100">{selectedFile ?? 'None'}</p>
                 </div>
+                {fileIntelligence ? (
+                  <button
+                    type="button"
+                    onClick={() => setFileIntelligenceOpen((prev) => !prev)}
+                    className="inline-flex h-11 items-center justify-center rounded-2xl border border-slate-300 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+                  >
+                    {fileIntelligenceOpen ? 'Hide File Intelligence' : 'View File Intelligence'}
+                  </button>
+                ) : null}
               </div>
 
               {fileError ? (
@@ -576,10 +691,10 @@ export default function Page() {
                           ) : null}
                         </div>
 
-                        <div className="flex flex-col items-center text-[11px] uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">
-                          <span>│</span>
-                          <span className="mt-1">├── reaches</span>
-                          <span className="mt-1">▼</span>
+                        <div className="flex flex-col items-center text-center text-[11px] uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">
+                          <span className="block leading-none">│</span>
+                          <span className="mt-2 block">├── reaches</span>
+                          <span className="mt-2 block">▼</span>
                         </div>
 
                         <div className="rounded-2xl border-2 border-orange-500 bg-orange-100 p-4 shadow-lg shadow-orange-200/50 dark:border-orange-400 dark:bg-orange-950">
@@ -591,10 +706,10 @@ export default function Page() {
                           <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{selectedAttackChain.location}</p>
                         </div>
 
-                        <div className="flex flex-col items-center text-[11px] uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">
-                          <span>│</span>
-                          <span className="mt-1">├── enables</span>
-                          <span className="mt-1">▼</span>
+                        <div className="flex flex-col items-center text-center text-[11px] uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">
+                          <span className="block leading-none">│</span>
+                          <span className="mt-2 block">├── enables</span>
+                          <span className="mt-2 block">▼</span>
                         </div>
 
                         <div className="rounded-2xl border border-slate-300 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-950">
@@ -662,8 +777,10 @@ export default function Page() {
                   </div>
                   {!contentCollapsed ? (
                     <div className="p-5 text-sm leading-6 text-slate-900 dark:text-slate-200">
-                      <pre className="whitespace-pre-wrap break-words font-mono">{fileContent}</pre>
+                    <div className="max-h-[420px] overflow-auto rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
+                      <pre className="min-w-full whitespace-pre font-mono">{fileContent}</pre>
                     </div>
+                  </div>
                   ) : (
                     <div className="p-5 text-sm text-slate-500 dark:text-slate-400">File content hidden. Expand to inspect the code.</div>
                   )}
@@ -675,6 +792,160 @@ export default function Page() {
               )}
             </div>
           </div>
+
+          {fileIntelligenceOpen && fileIntelligence ? (
+            <div className="fixed inset-y-0 right-0 z-50 w-[70%] max-w-[900px] overflow-y-auto border-l border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950">
+              <div className="flex items-center justify-between gap-4 border-b border-slate-200 pb-4 dark:border-slate-800">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">File Intelligence</p>
+                  <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-slate-100">{fileIntelligence.modulePurpose}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setFileIntelligenceOpen(false)}
+                  className="rounded-2xl border border-slate-300 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-900 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="mt-6 space-y-8 text-slate-900 dark:text-slate-100">
+                <section>
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">Overview</p>
+                      <p className="mt-3 text-sm text-slate-700 dark:text-slate-300">Purpose inferred from file signals.</p>
+                    </div>
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                      Confidence: {fileIntelligence.confidence}%
+                    </span>
+                  </div>
+                  <div className="mt-4 space-y-2 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900">
+                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{fileIntelligence.modulePurpose}</p>
+                    <div className="mt-3 space-y-1 text-sm text-slate-600 dark:text-slate-400">
+                      {fileIntelligence.findings.length > 0 ? (
+                        <p>Reasoning:</p>
+                      ) : null}
+                      <ul className="list-disc space-y-1 pl-5">
+                        {fileIntelligence.frameworkHints.map((hint) => (
+                          <li key={hint}>{hint}</li>
+                        ))}
+                        {fileIntelligence.imports.slice(0, 4).map((imp) => (
+                          <li key={imp}>{imp}</li>
+                        ))}
+                        {fileIntelligence.functions.slice(0, 4).map((fn) => (
+                          <li key={fn}>{fn}()</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                </section>
+
+                <section>
+                  <p className="text-xs uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">Signals</p>
+                  <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900">
+                      <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">File Name</p>
+                      <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{fileIntelligence.filePath}</p>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900">
+                      <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">File Type</p>
+                      <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{fileIntelligence.fileType}</p>
+                    </div>
+                  </div>
+                  <div className="mt-4 grid gap-4">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900">
+                      <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">Imports</p>
+                      <ul className="mt-3 space-y-1 text-sm text-slate-700 dark:text-slate-300">
+                        {fileIntelligence.imports.slice(0, 12).map((imp) => (
+                          <li key={imp}>{imp}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900">
+                      <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">Functions</p>
+                      <ul className="mt-3 space-y-1 text-sm text-slate-700 dark:text-slate-300">
+                        {fileIntelligence.functions.slice(0, 12).map((fn) => (
+                          <li key={fn}>{fn}()</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                  {fileIntelligence.classes.length > 0 ? (
+                    <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900">
+                      <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">Classes</p>
+                      <ul className="mt-3 space-y-1 text-sm text-slate-700 dark:text-slate-300">
+                        {fileIntelligence.classes.map((name) => (
+                          <li key={name}>{name}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </section>
+
+                <section>
+                  <p className="text-xs uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">Responsibilities</p>
+                  <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900">
+                    <ul className="space-y-2 text-sm text-slate-700 dark:text-slate-300">
+                      {fileIntelligence.responsibilities.map((item) => (
+                        <li key={item}>✓ {item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </section>
+
+                <section>
+                  <p className="text-xs uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">Structure</p>
+                  <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900">
+                      <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">Import Mapping</p>
+                      <div className="mt-3 space-y-2 text-sm text-slate-700 dark:text-slate-300">
+                        {fileIntelligence.imports.slice(0, 8).map((imp) => (
+                          <div key={imp} className="flex items-center justify-between gap-4">
+                            <span>{imp}</span>
+                            <span className="text-xs text-slate-500 dark:text-slate-400">{inferImportDomain(imp)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900">
+                      <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">Key Functions</p>
+                      <div className="mt-3 space-y-2 text-sm text-slate-700 dark:text-slate-300">
+                        {fileIntelligence.functions.slice(0, 8).map((fn) => (
+                          <div key={fn}>
+                            <p className="font-semibold text-slate-900 dark:text-slate-100">{fn}()</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">{inferFunctionRole(fn)}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <section>
+                  <p className="text-xs uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">Call Flow</p>
+                  <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900">
+                    {fileIntelligence.callGraph.length <= 3 ? (
+                      <pre className="whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-slate-300">{renderCallTree(fileIntelligence.callGraph)}</pre>
+                    ) : (
+                      <div className="h-[320px]">
+                        <ReactFlow
+                          nodes={fileIntelligenceNodes}
+                          edges={fileIntelligenceEdges}
+                          fitView
+                          fitViewOptions={{ padding: 0.2 }}
+                          defaultEdgeOptions={defaultEdgeOptions}
+                          nodesDraggable={false}
+                          nodesConnectable={false}
+                          panOnScroll
+                        />
+                      </div>
+                    )}
+                  </div>
+                </section>
+              </div>
+            </div>
+          ) : null}
 
           {files.length > 0 ? (
             <div id="repo-context" className="rounded-3xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
@@ -697,6 +968,10 @@ export default function Page() {
                         {repoContext}
                     </ReactMarkdown>
                   </div>
+                </div>
+              ) : skipRepoContext ? (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+                  Repository context generation is disabled. Toggle "Disable repo context" before scanning to preserve Gemini tokens during development.
                 </div>
               ) : loadingContext ? (
                 <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
