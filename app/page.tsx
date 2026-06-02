@@ -31,6 +31,8 @@ export default function Page() {
   const [aiCache, setAiCache] = useState<Record<string, string>>({})
   const [catClicks, setCatClicks] = useState(0)
   const [devMode, setDevMode] = useState(false)
+  const [devCode, setDevCode] = useState('')
+  const [devFilePath, setDevFilePath] = useState('pasted-file.js')
   const [cursorPos, setCursorPos] = useState({ x: 0, y: 0 })
   const [bubbleVisible, setBubbleVisible] = useState(false)
 
@@ -167,9 +169,31 @@ export default function Page() {
       const next = prev + 1
       if (next >= 5) {
         setDevMode(true)
+        setSkipRepoContext(true)
       }
       return next
     })
+  }
+
+  useEffect(() => {
+    if (devMode) {
+      setSkipRepoContext(true)
+    }
+  }, [devMode])
+
+  const handleDevPasteScan = () => {
+    setError(null)
+    setFileError(null)
+    setSelectedFinding(null)
+    setAiExplanation(null)
+    setAiError(null)
+    setFiles([])
+    setSelectedFile(devFilePath || 'pasted-file.js')
+    setFileContent(devCode)
+    setRepoContext(null)
+    setAllDiscoveredFindings([])
+    setFileIntelligenceOpen(false)
+    setStatus(`Loaded pasted file ${devFilePath}`)
   }
 
   useEffect(() => {
@@ -305,6 +329,11 @@ export default function Page() {
     setAiExplanation(null)
     setAiError(null)
 
+    if (devMode && devCode.trim()) {
+      handleDevPasteScan()
+      return
+    }
+
     if (!repoUrl.trim()) {
       setError('Please paste a GitHub repository URL.')
       setStatus('Waiting for repository...')
@@ -333,7 +362,7 @@ export default function Page() {
       setFiles(payload.files ?? [])
       setStatus(`Found ${payload.files?.length ?? 0} files`)
 
-      if (skipRepoContext) {
+      if (skipRepoContext || devMode) {
         setLoadingContext(false)
         setRepoContext(null)
       } else {
@@ -436,7 +465,7 @@ export default function Page() {
           </p>
           {devMode ? (
             <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-100 px-4 py-2 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
-              <span className="font-semibold">n-mode enabled</span>
+              <span className="font-semibold">Developer mode enabled</span>
               <span className="text-xs">ᓚᘏᗢ</span>
             </div>
           ) : catClicks > 0 ? (
@@ -501,6 +530,43 @@ export default function Page() {
             </div>
           </div>
 
+          {devMode ? (
+            <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+              <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="font-semibold text-slate-900 dark:text-slate-100">Dev mode activated</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Repo context generation is disabled. Paste code below to scan a single file locally.</p>
+                </div>
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                  DEV MODE
+                </span>
+              </div>
+              <div className="grid gap-4">
+                <input
+                  value={devFilePath}
+                  onChange={(event) => setDevFilePath(event.target.value)}
+                  placeholder="pasted-file.js"
+                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200/50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-slate-500 dark:focus:ring-slate-700/50"
+                />
+                <textarea
+                  value={devCode}
+                  onChange={(event) => setDevCode(event.target.value)}
+                  rows={6}
+                  placeholder="Paste source code here to scan it directly."
+                  className="min-h-[160px] w-full rounded-3xl border border-slate-300 bg-white px-4 py-3 text-sm font-mono text-slate-900 outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200/50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-slate-500 dark:focus:ring-slate-700/50"
+                />
+                <button
+                  type="button"
+                  onClick={handleDevPasteScan}
+                  disabled={scanning}
+                  className="inline-flex h-12 items-center justify-center rounded-2xl bg-slate-950 px-8 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-100 dark:text-slate-950 dark:hover:bg-slate-200"
+                >
+                  Scan pasted file
+                </button>
+              </div>
+            </div>
+          ) : null}
+
           <div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-center">
             <div>
               <p className="text-sm uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">Scan state</p>
@@ -523,7 +589,9 @@ export default function Page() {
               <p className="text-sm uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">Repository file list</p>
               <div className="mt-4 space-y-1 text-sm text-slate-700 dark:text-slate-300">
                 {files.length === 0 ? (
-                  <p className="font-mono text-sm text-slate-500 dark:text-slate-500">No files yet. Scan a repository first.</p>
+                  <p className="font-mono text-sm text-slate-500 dark:text-slate-500 whitespace-pre-line"> 
+                    {devMode ? 'Dev mode active:\nrepo file list is disabled while scanning pasted file.' : 'No files yet. Scan a repository first.'} 
+                  </p>
                 ) : (
                   <div className="space-y-1">
                     {files.slice(0, 40).map((file) => (
@@ -777,8 +845,8 @@ export default function Page() {
                   </div>
                   {!contentCollapsed ? (
                     <div className="p-5 text-sm leading-6 text-slate-900 dark:text-slate-200">
-                    <div className="max-h-[420px] overflow-auto rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
-                      <pre className="min-w-full whitespace-pre font-mono">{fileContent}</pre>
+                    <div className="max-h-[420px] max-w-full overflow-x-auto overflow-y-auto rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
+                      <pre className="min-w-max whitespace-pre font-mono">{fileContent}</pre>
                     </div>
                   </div>
                   ) : (
