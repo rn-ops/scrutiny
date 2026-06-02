@@ -10,6 +10,7 @@ export default function Page() {
   const [files, setFiles] = useState<string[]>([])
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
   const [fileContent, setFileContent] = useState('')
+  const [contentCollapsed, setContentCollapsed] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [loadingFile, setLoadingFile] = useState(false)
   const [status, setStatus] = useState('Waiting for repository...')
@@ -126,6 +127,12 @@ export default function Page() {
       setBubbleVisible(false)
     }
   }, [devMode, scanning])
+
+  useEffect(() => {
+    if (fileContent) {
+      setContentCollapsed(false)
+    }
+  }, [fileContent])
 
   const getSnippet = (finding: Finding) => {
     const lines = fileContent.split('\n')
@@ -639,8 +646,27 @@ export default function Page() {
               ) : null}
 
               {fileContent ? (
-                <div className="overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 p-5 text-sm leading-6 text-slate-900 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
-                  <pre className="whitespace-pre-wrap break-words font-mono">{fileContent}</pre>
+                <div className="overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950">
+                  <div className="flex items-center justify-between gap-4 border-b border-slate-200 bg-slate-100 px-5 py-3 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                    <div>
+                      <div>File content</div>
+                      <div className="text-xs font-normal text-slate-500 dark:text-slate-400">{selectedFile}</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setContentCollapsed(prev => !prev)}
+                      className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-900"
+                    >
+                      {contentCollapsed ? 'Show code' : 'Hide code'}
+                    </button>
+                  </div>
+                  {!contentCollapsed ? (
+                    <div className="p-5 text-sm leading-6 text-slate-900 dark:text-slate-200">
+                      <pre className="whitespace-pre-wrap break-words font-mono">{fileContent}</pre>
+                    </div>
+                  ) : (
+                    <div className="p-5 text-sm text-slate-500 dark:text-slate-400">File content hidden. Expand to inspect the code.</div>
+                  )}
                 </div>
               ) : (
                 <div className="rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
