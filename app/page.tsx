@@ -655,7 +655,7 @@ export default function Page() {
               ) : null}
             </div>
 
-            <div id="selected-file" className="rounded-3xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900 space-y-6">
+            <div id="selected-file" className="min-w-0 rounded-3xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900 space-y-6">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-sm uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">Selected file</p>
@@ -858,11 +858,11 @@ export default function Page() {
                     </button>
                   </div>
                   {!contentCollapsed ? (
-                    <div className="p-5 text-sm leading-6 text-slate-900 dark:text-slate-200">
-                    <div className="max-h-[420px] max-w-full overflow-x-auto overflow-y-auto rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
-                      <pre className="min-w-max whitespace-pre font-mono">{fileContent}</pre>
+                    <div className="p-5 text-sm leading-6 text-slate-900 dark:text-slate-200 min-w-0">
+                      <div className="max-h-[420px] w-full max-w-full overflow-x-auto overflow-y-auto rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
+                        <pre className="min-w-full whitespace-pre font-mono">{fileContent}</pre>
+                      </div>
                     </div>
-                  </div>
                   ) : (
                     <div className="p-5 text-sm text-slate-500 dark:text-slate-400">File content hidden. Expand to inspect the code.</div>
                   )}
