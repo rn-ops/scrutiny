@@ -1,5 +1,26 @@
 // lib/scanner.ts
 
+/*
+ * CORE SCANNING ENGINE FOR SCRUTINY
+ * 
+ * Purpose:
+ * Centralizes the static code analysis rules, type definitions, and vulnerability definitions.
+ *
+ * Key Components:
+ * - Type Definitions: Establishes schemas for tracking patterns, findings, and vulnerability chains.
+ * - Regex Signatures: High-signal matching rules optimized for multi-language detection.
+ * - Severity & Metadata: Prioritizes security risks and defines file-extension filter logic.
+ * - Remediation Guides: Pairs every finding with explicit, educational developer fixes.
+ *
+ * Scope:
+ * Detects high-risk flaws including hardcoded secrets, injection vectors, and broken deserialization.
+ */
+
+
+// ─────────────────────────────────────────────
+// TYPES & INTERFACES
+// ─────────────────────────────────────────────
+
 export type Severity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
 
 export type Pattern = {
@@ -50,7 +71,7 @@ const IGNORED_PATH_SEGMENTS = [
 ];
 
 // ─────────────────────────────────────────────
-// LANGUAGE → PATTERN ROUTING
+// LANGUAGE →  PATTERN ROUTING
 // Maps each file extension to the pattern types that apply to it.
 // This prevents cross-language false positives (e.g. PHP patterns firing on C files).
 // ─────────────────────────────────────────────

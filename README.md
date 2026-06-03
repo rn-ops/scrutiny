@@ -1,25 +1,36 @@
 # Scrutiny
 
-Scrutiny is a Next.js app for scanning GitHub repositories and surfacing suspicious code patterns, risk hotspots, and context-aware findings. It combines offline pattern scanning with on-demand Gemini AI explanations.
+Scrutiny is a Next.js GitHub repository scanner that combines offline pattern-based security detection with AST-backed file intelligence and optional Gemini AI assistance.
 
 ## Features
 
-- GitHub repo scan UI for repository file trees and individual file inspection
-- Offline pattern scanner for common security risks:
-  - Command injection
-  - Dynamic evaluation (`eval`)
-  - Hardcoded secrets
-- Rich finding metadata with matched code snippet, line number, severity, and explanation
-- Risk score and hotspot summary cards for quick repository triage
-- Gemini AI-powered repo context summary and explain-on-demand for selected findings
+- GitHub repo scan UI with file tree explorer and file selection
+- Offline vulnerability scanning across multiple languages using `lib/scanner.ts`
+- AST-backed File Intelligence panel for imported modules, functions, classes, call flow, and inferred responsibilities
+- Scroll-to-line navigation from intelligence metadata into file content
+- Gemini AI-powered repository context summary and per-finding explanations
+- Dev mode paste-only scanning that disables repo context generation for quick local analysis
+- Risk score and hotspot summary cards for fast triage
 
-## Tech Stack
+## Technology Stack
 
-- Next.js App Router
-- React + TypeScript
-- Tailwind CSS
-- `react-markdown` + `remark-gfm`
-- Google Gemini API via `@google/genai` / `@google/generative-ai`
+### Frontend
+- **Next.js 16.2.6** with App Router
+- **React 19.2.4** + TypeScript 5
+- **Tailwind CSS 4** for responsive styling and dark mode
+- **React Flow** for call graph visualization
+- **React Markdown** + **Remark GFM** for rendering Gemini responses
+
+### Backend and Analysis
+- **Next.js API routes** in `app/api/*/route.ts`
+- **Node.js runtime** via Next.js server functions
+- **@babel/parser** for AST-based file and module metadata extraction
+
+### AI Integration
+- **Google Gemini** via `@google/genai` and `@google/generative-ai`
+
+### Package Management
+- **npm**
 
 ## Setup
 
@@ -29,10 +40,11 @@ Scrutiny is a Next.js app for scanning GitHub repositories and surfacing suspici
 npm install
 ```
 
-2. Create a `.env.local` file at the project root and add your Gemini key:
+2. Create a `.env.local` file at the project root and add your Gemini key. Optionally add `GITHUB_TOKEN` for higher GitHub API quota:
 
 ```env
 GEMINI_API_KEY=your_api_key_here
+GITHUB_TOKEN=your_github_token_here
 ```
 
 3. Run the development server:
@@ -45,22 +57,29 @@ npm run dev
 
 ## Usage
 
-- Enter a GitHub repository URL in the app and trigger a scan
-- Browse the file tree and select files to view findings
-- Click on a finding to see offline explanation details
-- Use the `Explain with AI` button for Gemini-generated analysis
+- Enter a GitHub repository URL and start a scan
+- Browse the supported file list and select a file to analyze
+- View findings, matched code context, and risk details
+- Open the File Intelligence panel for AST-derived file metadata and inferred module purpose
+- Click a function in File Intelligence to jump to its source line
+- Enable dev mode to paste source code directly and skip repo context generation
+- Use AI explanation for deeper per-finding analysis when Gemini is enabled
 
 ## Notes
 
-- The scanner currently uses static regex patterns in `lib/scanner.ts`.
-- AI explanation features require a valid `GEMINI_API_KEY`.
-- The repo is designed as a *learning-focused tool* for security-first code discovery and UI experimentation.
+- The scanner uses static patterns in `lib/scanner.ts` and supports multiple languages.
+- File Intelligence is powered by `lib/fileIntelligence.ts` and uses AST extraction to infer imports, functions, classes, call graph edges, and responsibilities.
+- Gemini AI features require a valid `GEMINI_API_KEY`.
+- `GITHUB_TOKEN` is optional but recommended for private repos and higher rate limits.
 
 ## Project Structure
 
-- `app/page.tsx` - main scanner UI and interactions
-- `app/api/scan/route.ts` - GitHub file tree and scan endpoint
-- `app/api/context/route.ts` - GitHub repo context summary endpoint
-- `app/api/explain/route.ts` - Gemini explain-on-demand endpoint
-- `lib/scanner.ts` - pattern scanner and offline finding logic
-- `types/finding.ts` - finding metadata shapes
+- `app/page.tsx` - main scanner UI, file selection, findings, and File Intelligence panel
+- `app/api/scan/route.ts` - GitHub repo tree scanning endpoint
+- `app/api/file/route.ts` - selected file content endpoint
+- `app/api/context/route.ts` - Gemini repository context summary endpoint
+- `app/api/explain/route.ts` - Gemini per-finding explanation endpoint
+- `lib/github.ts` - GitHub URL parsing and content retrieval helpers
+- `lib/scanner.ts` - offline vulnerability scanner and finding engine
+- `lib/fileIntelligence.ts` - AST-backed file metadata extraction and inference
+- `types/finding.ts` - finding and story type definitions
