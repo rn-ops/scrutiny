@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo, useState, useEffect, useRef } from 'react'
 import { scanFiles, Finding, explanations } from '@/lib/scanner'
 import { buildFileIntelligence, FileIntelligence } from '@/lib/fileIntelligence'
 import ReactMarkdown from 'react-markdown';
@@ -74,6 +74,19 @@ export default function Page() {
     return buildFileIntelligence(selectedFile, fileContent, findings)
   }, [selectedFile, fileContent, findings])
 
+  const fileContentRef = useRef<HTMLDivElement | null>(null)
+
+  const scrollToLine = (line: number) => {
+    const container = fileContentRef.current
+    if (!container) return
+    const lineHeight = 22
+    container.scrollTo({ top: Math.max(0, (line - 1) * lineHeight), behavior: 'smooth' })
+  }
+
+  const formatSignature = (fn: { name: string; params: string[] }) => {
+    return `${fn.name}(${fn.params.join(',')})`
+  }
+
   const fileIntelligenceNodes = useMemo(() => {
     if (!fileIntelligence?.callGraph?.length) return []
     const uniqueNames = Array.from(new Set(fileIntelligence.callGraph.flatMap(edge => [edge.caller, edge.callee])))
@@ -98,12 +111,13 @@ export default function Page() {
 
   const defaultEdgeOptions = useMemo(() => ({ animated: true, style: { stroke: '#fb923c' } }), [])
 
-  const inferImportDomain = (importPath: string) => {
-    if (importPath.startsWith('.') || importPath.startsWith('/')) return 'local'
-    if (importPath.includes('react')) return 'UI'
-    if (importPath.includes('next')) return 'framework'
-    if (importPath.includes('express') || importPath.includes('axios') || importPath.includes('http')) return 'network'
-    if (importPath.includes('jsonwebtoken') || importPath.includes('bcrypt')) return 'auth'
+  const inferImportDomain = (importPath: string | { source: string }) => {
+    const source = typeof importPath === 'string' ? importPath : importPath.source
+    if (source.startsWith('.') || source.startsWith('/')) return 'local'
+    if (source.includes('react')) return 'UI'
+    if (source.includes('next')) return 'framework'
+    if (source.includes('express') || source.includes('axios') || source.includes('http')) return 'network'
+    if (source.includes('jsonwebtoken') || source.includes('bcrypt')) return 'auth'
     return 'dependency'
   }
 
@@ -896,13 +910,17 @@ export default function Page() {
                       ) : null}
                       <ul className="list-disc space-y-1 pl-5">
                         {fileIntelligence.frameworkHints.map((hint) => (
-                          <li key={hint}>{hint}</li>
+                          <li key={hint.framework}>
+                            <span className="font-semibold">{hint.framework}</span>: {hint.reason.join(', ')} ({Math.round(hint.confidence * 100)}%)
+                          </li>
                         ))}
                         {fileIntelligence.imports.slice(0, 4).map((imp) => (
-                          <li key={imp}>{imp}</li>
+                          <li key={`${imp.source}-${imp.line}`}>
+                            {imp.source}{imp.alias ? ` as ${imp.alias}` : ''}
+                          </li>
                         ))}
                         {fileIntelligence.functions.slice(0, 4).map((fn) => (
-                          <li key={fn}>{fn}()</li>
+                          <li key={fn.name}>{formatSignature(fn)}</li>
                         ))}
                       </ul>
                     </div>
@@ -926,7 +944,12 @@ export default function Page() {
                       <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">Imports</p>
                       <ul className="mt-3 space-y-1 text-sm text-slate-700 dark:text-slate-300">
                         {fileIntelligence.imports.slice(0, 12).map((imp) => (
-                          <li key={imp}>{imp}</li>
+                          <li key={`${imp.source}-${imp.line}`}> 
+                            <span className="font-semibold">{imp.source}</span>
+                            {imp.alias ? ` as ${imp.alias}` : ''}
+                            <span className="text-xs text-slate-500 dark:text-slate-400"> {imp.type}</span>
+                            <span className="text-xs text-slate-500 dark:text-slate-400"> (line {imp.line})</span>
+                          </li>
                         ))}
                       </ul>
                     </div>
@@ -934,7 +957,16 @@ export default function Page() {
                       <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">Functions</p>
                       <ul className="mt-3 space-y-1 text-sm text-slate-700 dark:text-slate-300">
                         {fileIntelligence.functions.slice(0, 12).map((fn) => (
-                          <li key={fn}>{fn}()</li>
+                          <li key={fn.name}>
+                            <button
+                              type="button"
+                              onClick={() => scrollToLine(fn.line)}
+                              className="text-left text-sm font-mono text-slate-900 transition hover:text-slate-700 dark:text-slate-100 dark:hover:text-slate-300"
+                            >
+                              {formatSignature(fn)}
+                            </button>
+                            <div className="text-xs text-slate-500 dark:text-slate-400">line {fn.line}</div>
+                          </li>
                         ))}
                       </ul>
                     </div>
@@ -943,12 +975,43 @@ export default function Page() {
                     <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900">
                       <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">Classes</p>
                       <ul className="mt-3 space-y-1 text-sm text-slate-700 dark:text-slate-300">
-                        {fileIntelligence.classes.map((name) => (
-                          <li key={name}>{name}</li>
+                        {fileIntelligence.classes.map((cls) => (
+                          <li key={cls.name}>
+                            <span className="font-semibold">{cls.name}</span>
+                            <span className="text-xs text-slate-500 dark:text-slate-400"> (line {cls.line})</span>
+                            {cls.methods.length > 0 ? <div className="text-xs text-slate-500 dark:text-slate-400">methods: {cls.methods.join(', ')}</div> : null}
+                          </li>
                         ))}
                       </ul>
                     </div>
                   ) : null}
+                </section>
+
+                <section>
+                  <p className="text-xs uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">Metrics</p>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900">
+                      <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">File Metrics</p>
+                      <div className="mt-3 space-y-2 text-sm text-slate-700 dark:text-slate-300">
+                        <div>LOC: <span className="font-semibold text-slate-900 dark:text-slate-100">{fileIntelligence.metrics.linesOfCode}</span></div>
+                        <div>Functions: <span className="font-semibold text-slate-900 dark:text-slate-100">{fileIntelligence.metrics.functionCount}</span></div>
+                        <div>Imports: <span className="font-semibold text-slate-900 dark:text-slate-100">{fileIntelligence.metrics.importCount}</span></div>
+                        <div>Classes: <span className="font-semibold text-slate-900 dark:text-slate-100">{fileIntelligence.metrics.classCount}</span></div>
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900">
+                      <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">Dependencies</p>
+                      <ul className="mt-3 space-y-1 text-sm text-slate-700 dark:text-slate-300">
+                        {fileIntelligence.dependencies.length > 0 ? (
+                          fileIntelligence.dependencies.map((dep) => (
+                            <li key={dep}>{dep}</li>
+                          ))
+                        ) : (
+                          <li className="text-slate-500 dark:text-slate-400">None detected</li>
+                        )}
+                      </ul>
+                    </div>
+                  </div>
                 </section>
 
                 <section>
@@ -969,8 +1032,8 @@ export default function Page() {
                       <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">Import Mapping</p>
                       <div className="mt-3 space-y-2 text-sm text-slate-700 dark:text-slate-300">
                         {fileIntelligence.imports.slice(0, 8).map((imp) => (
-                          <div key={imp} className="flex items-center justify-between gap-4">
-                            <span>{imp}</span>
+                          <div key={`${imp.source}-${imp.line}`} className="flex items-center justify-between gap-4">
+                            <span>{imp.source}</span>
                             <span className="text-xs text-slate-500 dark:text-slate-400">{inferImportDomain(imp)}</span>
                           </div>
                         ))}
@@ -980,9 +1043,9 @@ export default function Page() {
                       <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500 dark:text-slate-400">Key Functions</p>
                       <div className="mt-3 space-y-2 text-sm text-slate-700 dark:text-slate-300">
                         {fileIntelligence.functions.slice(0, 8).map((fn) => (
-                          <div key={fn}>
-                            <p className="font-semibold text-slate-900 dark:text-slate-100">{fn}()</p>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">{inferFunctionRole(fn)}</p>
+                          <div key={fn.name}>
+                            <p className="font-semibold text-slate-900 dark:text-slate-100">{formatSignature(fn)}</p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400">{inferFunctionRole(fn.name)}</p>
                           </div>
                         ))}
                       </div>
