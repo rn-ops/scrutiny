@@ -1,6 +1,25 @@
 # Scrutiny
 
 Scrutiny is a Next.js GitHub repository scanner that combines offline pattern-based security detection with AST-backed file intelligence and optional Gemini AI assistance.
+<table>
+<tr>
+<td width="50%">
+<img src="https://github.com/user-attachments/assets/a64fb437-57e1-4370-9bcf-6dafbc4b47eb" alt="Dashboard"/>
+</td>
+<td width="50%">
+<img src="https://github.com/user-attachments/assets/645c57cf-6cad-4a4f-ae68-5dda3ae756c8" alt="Repository Analysis"/>
+</td>
+</tr>
+
+<tr>
+<td width="50%">
+<img src="https://github.com/user-attachments/assets/3e8cc87b-2baf-4302-b348-283118b6f35e" alt="Security Findings"/>
+</td>
+<td width="50%">
+<img src="https://github.com/user-attachments/assets/4df6b77a-0250-41d5-a86f-3d258400700e" alt="Code Intelligence"/>
+</td>
+</tr>
+</table>
 
 ## Features
 
