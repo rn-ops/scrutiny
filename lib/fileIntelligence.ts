@@ -72,6 +72,7 @@ export type CallEdge = {
 export type FileIntelligence = {
   filePath: string
   fileType: string
+  astStatus: 'analyzed' | 'unsupported' | 'parse-failed'
   imports: ImportMeta[]
   exports: ExportMeta[]
   functions: FunctionMeta[]
@@ -131,6 +132,7 @@ function parseSource(content: string) {
       return parse(content, {
         sourceType: 'script',
         plugins: [
+          'typescript',
           'jsx',
           'classProperties',
           'dynamicImport',
@@ -158,20 +160,40 @@ function isObjectWithType(value: unknown): value is { type: string } {
  * Production environments should consider iterative traversal, but recursion is
  * cleaner for dev and sufficient for typical files (<2000 nodes).
  */
-function visit(node: any, visitors: Record<string, (node: any, state: any) => void>, state: any) {
+function visit(node: any, visitors: Record<string, (node: any, state: any) => void>, state: any, parent: any = null) {
   if (!node || typeof node !== 'object') return
 
+  const nodeState = { ...state, parent }
   const visitor = visitors[node.type]
-  if (visitor) visitor(node, state)
+  if (visitor) visitor(node, nodeState)
+
+  let currentFunctionName = state.currentFunctionName
+  if (node.type === 'FunctionDeclaration' && node.id?.name) {
+    currentFunctionName = node.id.name
+  } else if ((node.type === 'ArrowFunctionExpression' || node.type === 'FunctionExpression') && parent?.type === 'VariableDeclarator' && parent.id?.name) {
+    currentFunctionName = parent.id.name
+  } else if ((node.type === 'ClassMethod' || node.type === 'ClassPrivateMethod') && node.key?.name) {
+    currentFunctionName = `${state.enclosingClass ? `${state.enclosingClass}.` : ''}${node.key.name}`
+  } else if (node.type === 'ObjectMethod' && node.key?.name) {
+    currentFunctionName = node.key.name
+  }
+
+  const childState = {
+    ...nodeState,
+    enclosingClass: node.type === 'ClassDeclaration' || node.type === 'ClassExpression'
+      ? node.id?.name ?? state.enclosingClass
+      : state.enclosingClass,
+    currentFunctionName
+  }
 
   for (const key of Object.keys(node)) {
     const value = node[key]
     if (Array.isArray(value)) {
       for (const child of value) {
-        if (isObjectWithType(child)) visit(child, visitors, state)
+        if (isObjectWithType(child)) visit(child, visitors, childState, node)
       }
     } else if (isObjectWithType(value)) {
-      visit(value, visitors, state)
+      visit(value, visitors, childState, node)
     }
   }
 }
@@ -346,6 +368,12 @@ export function buildFileIntelligence(filePath: string | null, content: string, 
 
   const ast = parseSource(content)
   const fileType = getFileType(filePath)
+  const astSupported = ['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.mts', '.cts'].includes(fileType.toLowerCase())
+  const astStatus: FileIntelligence['astStatus'] = !astSupported
+    ? 'unsupported'
+    : ast
+      ? 'analyzed'
+      : 'parse-failed'
 
   // ──────────────────────────────────────────────────────────────
   // COLLECTION PHASE (with local helpers)
@@ -360,7 +388,6 @@ export function buildFileIntelligence(filePath: string | null, content: string, 
   const dependencies = new Set<string>()
   const frameworkHintsMap = new Map<string, FrameworkHint>()
   const exportedNames = new Set<string>()
-  const scopeStack: string[] = ['root']
 
   const addFunction = (meta: FunctionMeta) => {
     const existing = functions.find(fn => fn.name === meta.name)
@@ -679,7 +706,6 @@ export function buildFileIntelligence(filePath: string | null, content: string, 
             isArrow: false,
             type: 'method'
           })
-          scopeStack.push(methodName)
         },
 
         // Capture object methods
@@ -696,12 +722,11 @@ export function buildFileIntelligence(filePath: string | null, content: string, 
             isArrow: false,
             type: 'method'
           })
-          scopeStack.push(name)
         },
 
         // Capture function calls to build call graph
-        CallExpression(node: any) {
-          const caller = scopeStack[scopeStack.length - 1] || 'root'
+        CallExpression(node: any, state: any) {
+          const caller = state.currentFunctionName || 'root'
           const calleeName = getCalleeName(node.callee)
           if (calleeName) {
             addEdge(caller, calleeName, 'call')
@@ -763,6 +788,7 @@ export function buildFileIntelligence(filePath: string | null, content: string, 
   return {
     filePath,
     fileType,
+    astStatus,
     imports,
     exports,
     functions,
