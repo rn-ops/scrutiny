@@ -23,6 +23,7 @@ app/
     explain/route.ts
   components/
     ScrutinyDashboard.tsx
+    FileIntelligenceDrawer.tsx
   hooks/
     useScrutinyWorkspace.ts
   globals.css
@@ -30,7 +31,13 @@ app/
   page.tsx
 lib/
   analyzer.ts
+  fileIntelligence.ts
   github.ts
+demo/
+  README.md
+  api.ts
+  query.ts
+  worker.php
 design/
   ARCHITECTURE.md
   RECONSTRUCTION.md
@@ -89,6 +96,8 @@ Analyzer responsibilities:
 - aggregate repo/module summaries and hotspots
 - create compact AI payloads
 
+Use `lib/fileIntelligence.ts` for selected-file AST details. It records per-file calls and static `fetch()` references to source-file paths. Do not treat these links as full data-flow analysis.
+
 ## Phase 4: Workspace Hook
 
 Create `app/hooks/useScrutinyWorkspace.ts`.
@@ -99,6 +108,7 @@ The hook owns:
 - discovered `files`
 - `selectedFile` and `fileContent`
 - accumulated `AnalysisResult`
+- `FileIntelligence` results keyed by opened file path
 - selected finding state
 - dev-mode paste state
 - Gemini insight loading/result/error/cache
@@ -109,6 +119,8 @@ Important behavior:
 - repository scan fetches only the tree
 - selecting a file fetches source and runs local `analyzeFiles`
 - each analyzed file is merged into accumulated state
+- each opened file adds function calls and static file references to the File Intelligence graph
+- static import and HTTP route links become resolved when the target file is opened
 - Gemini is not called until `Generate Insights`
 - AI responses are cached by compact payload
 
@@ -126,6 +138,7 @@ Create `app/components/ScrutinyDashboard.tsx` with sections for:
 - scan controls and dev-mode paste input
 - file browser and hotspots
 - selected-file metadata and content
+- File Intelligence drawer with imports, exports, functions, classes, frameworks, and call flow
 - findings and local explanations
 - repository/module intelligence summary
 - AI insights panel with a `Generate Insights` button
@@ -137,6 +150,8 @@ Selected-file content must be width-bounded:
 - `<pre>` uses `whitespace-pre` and `min-w-max`
 
 This prevents long source lines from expanding the selected-file panel.
+
+The graph links parsed function calls, imported exports, and static `fetch()` file paths. It displays unscanned targets as dashed nodes. PHP and Python targets appear as file nodes because Babel does not parse their functions.
 
 ## Phase 6: Gemini Insights
 
@@ -208,3 +223,7 @@ Manual checks:
 - dev mode analyzes pasted code without a repo URL
 - dev mode does not call GitHub when the paste is empty
 - wide source lines scroll horizontally inside selected-file content
+- opening `demo/api.ts` first shows unresolved TypeScript and PHP targets
+- opening `demo/query.ts` resolves the imported function edge
+- opening `demo/worker.php` resolves the static HTTP file edge and adds PHP rule findings
+- `Generate Insights` summarizes local findings without sending full source files

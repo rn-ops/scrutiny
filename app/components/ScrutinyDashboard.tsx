@@ -460,6 +460,7 @@ export function ScrutinyDashboard(props: DashboardProps) {
         <FileIntelligenceDrawer
           intelligence={props.selectedFileIntelligence}
           scannedFiles={props.scannedFileIntelligence}
+          availableFiles={props.files}
           onClose={() => setFileIntelligenceOpen(false)}
         />
       ) : null}

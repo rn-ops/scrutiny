@@ -75,6 +75,12 @@ export type CallEdge = {
   type: 'call' | 'method' | 'constructor' | 'unknown'
 }
 
+export type FileCall = {
+  caller: string
+  path: string
+  type: 'http'
+}
+
 export type FileIntelligence = {
   filePath: string
   fileType: string
@@ -84,6 +90,7 @@ export type FileIntelligence = {
   functions: FunctionMeta[]
   classes: ClassMeta[]
   callGraph: CallEdge[]
+  fileCalls: FileCall[]
   frameworkHints: FrameworkHint[]
   findings: string[]
   modulePurpose: string
@@ -390,6 +397,7 @@ export function buildFileIntelligence(filePath: string | null, content: string, 
   const functions: FunctionMeta[] = []
   const classes: ClassMeta[] = []
   const callEdges = new Set<string>()
+  const fileCalls: FileCall[] = []
   const entryPoints = new Set<string>()
   const dependencies = new Set<string>()
   const frameworkHintsMap = new Map<string, FrameworkHint>()
@@ -744,8 +752,20 @@ export function buildFileIntelligence(filePath: string | null, content: string, 
         CallExpression(node: any, state: any) {
           const caller = state.currentFunctionName || 'root'
           const calleeName = getCalleeName(node.callee)
-          if (calleeName) {
+          const firstArgument = node.arguments[0]
+          const endpoint = firstArgument?.type === 'StringLiteral'
+            ? firstArgument.value
+            : firstArgument?.type === 'TemplateLiteral' && firstArgument.expressions.length === 0
+              ? firstArgument.quasis[0]?.value.cooked
+              : null
+          const isFileEndpoint = calleeName === 'fetch' && typeof endpoint === 'string' && /\.(?:js|jsx|ts|tsx|py|php|c|cpp|h|hpp|java|cs)(?:[?#]|$)/i.test(endpoint)
+
+          if (calleeName && !isFileEndpoint) {
             addEdge(caller, calleeName, 'call')
+          }
+          if (isFileEndpoint) {
+            const exists = fileCalls.some(fileCall => fileCall.caller === caller && fileCall.path === endpoint)
+            if (!exists) fileCalls.push({ caller, path: endpoint, type: 'http' })
           }
 
           // Detect Express route handlers (becomes entry points for scanning)
@@ -813,6 +833,7 @@ export function buildFileIntelligence(filePath: string | null, content: string, 
       const [caller, callee, type] = edge.split('::')
       return { caller, callee, type: (type as CallEdge['type']) || 'unknown' }
     }),
+    fileCalls,
     frameworkHints: Array.from(frameworkHintsMap.values()),
     findings: findingTitles,
     modulePurpose,

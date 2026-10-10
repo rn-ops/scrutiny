@@ -12,6 +12,10 @@ export function loadUser(request: Request) {
   return buildUserQuery(request.query.id)
 }
 
+export function callPhpWorker() {
+  return fetch('/demo/worker.php')
+}
+
 export function runExpression(request: Request) {
   return eval(request.body.expression)
 }

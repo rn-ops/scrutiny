@@ -30,7 +30,8 @@ scrutiny/
 │   │   ├── context/route.ts       # Gemini insights from compact analyzer payload
 │   │   └── explain/route.ts       # Legacy per-finding explanation endpoint
 │   ├── components/
-│   │   └── ScrutinyDashboard.tsx  # Main UI sections
+│   │   ├── ScrutinyDashboard.tsx  # Main UI sections and drawer trigger
+│   │   └── FileIntelligenceDrawer.tsx # AST details and progressive call graph
 │   ├── hooks/
 │   │   └── useScrutinyWorkspace.ts # Scan, analysis, cache, and AI state
 │   ├── globals.css
@@ -38,7 +39,9 @@ scrutiny/
 │   └── page.tsx                   # Thin composition layer
 ├── lib/
 │   ├── analyzer.ts                # Findings, metadata, summaries, compact AI payload
+│   ├── fileIntelligence.ts        # AST details, function calls, and static file references
 │   └── github.ts                  # GitHub URL helpers and file retrieval
+├── demo/                           # Four-file TypeScript/PHP demo
 ├── design/
 │   ├── ARCHITECTURE.md
 │   └── RECONSTRUCTION.md
@@ -60,11 +63,13 @@ User opens a file
         ↓
 /api/file fetches file content
         ↓
-useScrutinyWorkspace runs analyzeFiles locally
+useScrutinyWorkspace runs local security analysis and file intelligence
         ↓
-Findings and FileMetadata are merged into accumulated repo state
+Findings, FileMetadata, and FileIntelligence are stored by file path
         ↓
 UI renders selected-file findings, risk, metadata, module summaries, and hotspots
+        ↓
+File Intelligence graph grows as more files are opened
         ↓
 User clicks Generate Insights
         ↓
@@ -82,6 +87,8 @@ CompactAiPayload is sent to /api/context for Gemini synthesis
 - file role and responsibility inference
 - module and repository summary aggregation
 - compact AI payload generation
+
+`lib/fileIntelligence.ts` supplies the selected-file AST detail view and graph inputs. It records function calls and static `fetch()` references to supported source-file paths. The dashboard combines these per-file results as the user opens files.
 
 Primary exported types:
 
@@ -110,6 +117,7 @@ Structured output types:
 - repo URL and discovered file list
 - selected file and content
 - accumulated `AnalysisResult`
+- `fileIntelligenceByPath`, containing the AST result for each opened file
 - selected finding
 - dev mode paste state
 - AI insight loading, error, result, and cache state
@@ -122,6 +130,7 @@ Structured output types:
 - selected-file content view
 - findings and local explanations
 - file metadata summary
+- File Intelligence drawer and accumulated call-flow graph
 - repository/module intelligence summary
 - `Generate Insights` panel
 
@@ -133,6 +142,8 @@ Scrutiny saves tokens by making AI explicit and compact:
 - file load runs local analysis only
 - source content is not sent to Gemini for repo insights
 - findings and metadata accumulate in client state as files are opened
+- function calls and static file references accumulate in `fileIntelligenceByPath`
+- imported function edges resolve after the target file is opened; static HTTP file links resolve after their target is opened
 - `Generate Insights` sends `CompactAiPayload`
 - identical compact payloads reuse cached AI responses for the current page session
 - dev mode remains low-cost and can generate separate paste-file insights when needed
@@ -148,6 +159,8 @@ The interface prioritizes screen time by user value:
 
 AI is presented as synthesis over local evidence, not as a constant background explanation.
 In dev mode the repository URL is not used: pasted source is analyzed locally, and AI insights remain an explicit optional action.
+
+The four-file demo contains TypeScript modules linked by imports and a TypeScript-to-PHP static HTTP reference. Scan `demo/api.ts`, then `demo/query.ts`, then `demo/worker.php` to see unresolved targets become resolved graph links. The PHP file gets local rule findings, but Babel does not extract PHP functions.
 
 ## API Routes
 

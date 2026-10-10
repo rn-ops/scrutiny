@@ -50,15 +50,16 @@ flowchart TD
 | --- | --- |
 | `app/page.tsx` | Creates the workspace hook and passes state to the dashboard. |
 | `app/hooks/useScrutinyWorkspace.ts` | Owns scan state, selected-file state, local analysis, paste mode, and insight cache. |
-| `app/components/ScrutinyDashboard.tsx` | Renders scan controls, file selection, selected-file content, findings, summaries, and AI insights. |
+| `app/components/ScrutinyDashboard.tsx` | Renders scan controls, file selection, selected-file content, findings, summaries, and AI insights. It opens the File Intelligence drawer. |
+| `app/components/FileIntelligenceDrawer.tsx` | Shows selected-file AST details and the progressively built cross-file call-flow graph. |
 | `app/api/scan/route.ts` | Validates a GitHub repository URL and returns file paths. |
 | `app/api/file/route.ts` | Validates a repository URL and path, then returns one file's text. |
 | `app/api/context/route.ts` | Sends the submitted analysis summary to Gemini and returns Markdown. |
 | `app/api/explain/route.ts` | A separate Gemini explanation endpoint. The current dashboard does not call it. |
 | `lib/github.ts` | Parses GitHub repository URLs and calls the GitHub REST API. |
 | `lib/analyzer.ts` | Runs security patterns, parses JS/TS syntax, and builds summaries. |
-| `lib/fileIntelligence.ts` | A separate AST helper. The selected-file File Intelligence panel is not active in the current UI. |
-| `demo/` | Example source files for manual review and scanner checks. |
+| `lib/fileIntelligence.ts` | Extracts AST details and per-file function and static HTTP file calls for the drawer. |
+| `demo/` | Four-file TypeScript/PHP fixture for local rules, file links, and Gemini insights. |
 
 ## 4. Runtime Workflows
 
@@ -85,7 +86,9 @@ sequenceDiagram
     File-->>Hook: Source text
     Hook->>Analyze: analyzeFiles(file and source)
     Analyze-->>Hook: Findings, metadata, summary
+    Hook->>Hook: Store FileIntelligence by path
     Hook-->>UI: Update local results
+    UI->>UI: Grow call-flow graph from analyzed files
     User->>UI: Select Generate Insights
     UI->>Hook: generateInsights()
     Hook->>AI: POST compact summary
@@ -93,7 +96,7 @@ sequenceDiagram
     Hook-->>UI: Show insight
 ```
 
-The repository scan fetches paths. It does not download or analyze every source file. Each file is fetched and analyzed when the user selects it. The repository totals therefore describe **opened and analyzed files**, except `fileCount`, which describes discovered paths.
+The repository scan fetches paths. It does not download or analyze every source file. Each file is fetched and analyzed when the user selects it. The repository totals therefore describe **opened and analyzed files**, except `fileCount`, which describes discovered paths. The workspace stores each file's `FileIntelligence` result by path. The drawer combines those results. It rebuilds the graph as each file opens.
 
 ### 4.2 Paste mode
 
@@ -108,6 +111,7 @@ Important state includes:
 - `repoUrl` and `files`: current repository and discovered paths.
 - `selectedFile` and `fileContent`: selected path and loaded source text.
 - `analysis`: accumulated `AnalysisResult` for files opened in this page session.
+- `fileIntelligenceByPath`: AST intelligence for each opened file. The graph uses these records to add functions, calls, imports, and file references.
 - `selectedFinding`: the finding selected in the user interface.
 - `devMode`, `devCode`, and `devFilePath`: paste-mode state.
 - `repoInsights`, `insightsLoading`, and `insightsError`: AI result state.
@@ -136,7 +140,7 @@ The current security rules are selected by extension. This support list does not
 
 ### 6.2 Rule-based findings
 
-The scanner processes one source line at a time. It skips lines that start with common comment markers and lines that contain `scan-ignore`. It tests the rules mapped to that file extension. It records the first matching rule on each line.
+The scanner processes one source line at a time. It skips lines that start with common comment markers and lines that contain `scan-ignore`. It tests the rules mapped to that file extension and can record multiple distinct rule matches on one line. A generic command-injection match is suppressed when a more specific command-injection rule matches the same line.
 
 Current rule families include:
 
@@ -171,7 +175,27 @@ The file and repository risk scores are sums of finding weights. They are sortin
 
 For JS/TS-family files, `lib/analyzer.ts` uses `@babel/parser` and a visitor to collect imports, exports, functions, classes, call edges, framework hints, entry points, and dependencies. It also counts basic source metrics and infers a module role from path names, imports, framework signals, and content keywords.
 
-The role and responsibility labels are heuristics. They can be wrong. The active workspace flow uses the analyzer in `lib/analyzer.ts`. The separate `lib/fileIntelligence.ts` helper is not currently rendered in the selected-file panel.
+The role and responsibility labels are heuristics. They can be wrong. `lib/fileIntelligence.ts` builds the selected-file details and graph data. The workspace stores each result in `fileIntelligenceByPath`. Babel provides AST details for JavaScript and TypeScript-family files. The local rule scanner can also inspect several other languages, including PHP, but those files do not receive the same AST metadata.
+
+### 6.5 Progressive Call-Flow Graph
+
+The File Intelligence drawer combines all opened files. It does not fetch more source by itself. A user opens files in the repository list. Each successful file load adds or replaces that path's local intelligence result. The graph then recomputes from the accumulated results.
+
+The graph uses two kinds of links:
+
+- Function calls inside one parsed file.
+- Static `fetch()` calls whose URL ends in a supported source-file extension. These calls can link a JavaScript/TypeScript function to a PHP, Python, or other discovered source file.
+
+For imported JavaScript/TypeScript functions, the graph resolves a link only when the importing file and target file have both been analyzed and the target function is exported. A static HTTP file path can appear as an unresolved dashed node before its target is analyzed. After the target is opened, the graph changes that node to an analyzed file node. Green edges indicate analyzed HTTP targets. Blue edges indicate function calls. Dashed amber edges indicate targets that are not analyzed or cannot be resolved.
+
+```mermaid
+flowchart LR
+  API[api.ts: loadUser] -->|imported call| Query[query.ts: buildUserQuery]
+  API -.->|first scan: fetch /demo/worker.php| Pending[worker.php unresolved]
+  Pending -->|after worker.php is opened| PHP[worker.php analyzed]
+```
+
+The graph is a static view. It does not prove that a route exists or runs. It does not resolve dynamic URL construction, arbitrary HTTP clients, process execution, reflection, or runtime dispatch. PHP and Python functions are not parsed by Babel, so a link to those files ends at a file node. Their local rule findings still appear in the selected-file findings panel.
 
 ## 7. Structured Results
 
@@ -364,7 +388,7 @@ There is no dedicated automated test suite in the current package scripts. Use `
 Current limits:
 
 - A recursive regular-expression scan is not a complete taint or control-flow analysis.
-- The scanner records only the first matching rule on a line.
+- Some same-line findings can still overlap. The scanner suppresses known generic/specific command-injection duplicates, but rules need ongoing regression tests.
 - Comment skipping checks line prefixes. It does not parse comments in every language.
 - Source and sink recognition uses a small list of text patterns.
 - AST support is strongest for JavaScript and TypeScript-family files. Other supported extensions use rules but do not gain the same Babel metadata.
@@ -372,7 +396,8 @@ Current limits:
 - The UI has a list display limit. The compact AI payload has its own limits.
 - The risk score is a ranking value, not a probability or standard severity score.
 - The insights endpoint summarizes local results. It does not add verified vulnerability findings.
-- `lib/fileIntelligence.ts` is separate from the active local analysis output and is not currently wired into the selected-file panel.
+- The File Intelligence graph resolves only supported static import/export links and static `fetch()` URLs. It does not perform taint analysis or general runtime call resolution.
+- `lib/fileIntelligence.ts` uses Babel. It does not extract function-level AST details from PHP, Python, C/C++, Java, or C# files.
 - API request bodies use some TypeScript casts. Add runtime schema validation before wider deployment.
 
 Recommended next work:
@@ -382,7 +407,7 @@ Recommended next work:
 3. Improve rules with AST and source-to-sink analysis where feasible.
 4. Add an optional AI second pass with a strict output schema and evidence checks.
 5. Add request limits, runtime validation, and model cost telemetry.
-6. Decide whether to consolidate or remove the unused `lib/fileIntelligence.ts` module.
+6. Add tests for cross-file imports, HTTP endpoint links, unresolved targets, and recursive call graphs.
 
 ## 14. Research and Technical References
 
