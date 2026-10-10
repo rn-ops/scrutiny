@@ -2,8 +2,11 @@
 
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { useState } from 'react'
 import type { ReactNode } from 'react'
 import type { FileMetadata, Finding, RepoSummary } from '@/lib/analyzer'
+import type { FileIntelligence } from '@/lib/fileIntelligence'
+import { FileIntelligenceDrawer } from './FileIntelligenceDrawer'
 
 type Explanation = { why: string; impact: string; fix: string } | null
 
@@ -24,6 +27,8 @@ type DashboardProps = {
   setSelectedFinding: (finding: Finding | null) => void
   selectedFindings: Finding[]
   selectedMetadata: FileMetadata | null
+  selectedFileIntelligence: FileIntelligence | null
+  scannedFileIntelligence: FileIntelligence[]
   selectedExplanation: Explanation
   repoSummary: RepoSummary
   repoInsights: string | null
@@ -187,12 +192,23 @@ function FileBrowser({ files, selectedFile, devMode, handleSelectFile, hotspots 
   )
 }
 
-function SelectedFilePanel(props: Pick<DashboardProps, 'selectedFile' | 'fileContent' | 'contentCollapsed' | 'setContentCollapsed' | 'fileError' | 'selectedMetadata'>) {
+function SelectedFilePanel(props: Pick<DashboardProps, 'selectedFile' | 'fileContent' | 'contentCollapsed' | 'setContentCollapsed' | 'fileError' | 'selectedMetadata' | 'selectedFileIntelligence'> & { onOpenFileIntelligence: () => void }) {
   return (
     <section id="selected-file" className="min-w-0 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950">
-      <div className="flex flex-col gap-1">
-        <p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Selected File</p>
-        <h2 className="break-all font-mono text-sm font-semibold text-slate-950 dark:text-slate-100">{props.selectedFile ?? 'None'}</h2>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-col gap-1">
+          <p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Selected File</p>
+          <h2 className="break-all font-mono text-sm font-semibold text-slate-950 dark:text-slate-100">{props.selectedFile ?? 'None'}</h2>
+        </div>
+        {props.selectedFileIntelligence ? (
+          <button
+            type="button"
+            onClick={props.onOpenFileIntelligence}
+            className="shrink-0 rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-800 transition hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+          >
+            View File Intelligence
+          </button>
+        ) : null}
       </div>
 
       {props.fileError ? <div className="mt-4"><Notice>{props.fileError}</Notice></div> : null}
@@ -389,6 +405,8 @@ function Notice({ children }: { children: ReactNode }) {
 }
 
 export function ScrutinyDashboard(props: DashboardProps) {
+  const [fileIntelligenceOpen, setFileIntelligenceOpen] = useState(false)
+
   return (
     <div className="relative min-h-screen bg-slate-100 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
       <main className="mx-auto flex w-full max-w-[105rem] flex-col gap-4 px-5 py-10 lg:px-10">
@@ -415,6 +433,8 @@ export function ScrutinyDashboard(props: DashboardProps) {
               setContentCollapsed={props.setContentCollapsed}
               fileError={props.fileError}
               selectedMetadata={props.selectedMetadata}
+              selectedFileIntelligence={props.selectedFileIntelligence}
+              onOpenFileIntelligence={() => setFileIntelligenceOpen(true)}
             />
             <FindingsPanel
               findings={props.selectedFindings}
@@ -436,6 +456,13 @@ export function ScrutinyDashboard(props: DashboardProps) {
           devMode={props.devMode}
         />
       </main>
+      {fileIntelligenceOpen && props.selectedFileIntelligence ? (
+        <FileIntelligenceDrawer
+          intelligence={props.selectedFileIntelligence}
+          scannedFiles={props.scannedFileIntelligence}
+          onClose={() => setFileIntelligenceOpen(false)}
+        />
+      ) : null}
     </div>
   )
 }

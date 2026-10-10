@@ -15,12 +15,18 @@ import { Finding } from '@/lib/analyzer'
 // TYPES & INTERFACES
 // ──────────────────────────────────────────────────────────────
 
+export type ImportBinding = {
+  imported: string
+  local: string
+}
+
 export type ImportMeta = {
   source: string
   alias: string | null
   type: 'default' | 'namespace' | 'named' | 'require' | 'side-effect' | 'unknown'
   line: number
   specifiers: string[]
+  bindings: ImportBinding[]
 }
 
 export type ExportMeta = {
@@ -453,6 +459,7 @@ export function buildFileIntelligence(filePath: string | null, content: string, 
           const source = node.source.value
           const line = node.loc?.start?.line ?? 0
           const specifiers: string[] = []
+          const bindings: ImportBinding[] = []
           let type: ImportMeta['type'] = 'side-effect'
           let alias: string | null = null
 
@@ -461,18 +468,22 @@ export function buildFileIntelligence(filePath: string | null, content: string, 
               type = 'default'
               alias = specifier.local.name
               specifiers.push(specifier.local.name)
+              bindings.push({ imported: 'default', local: specifier.local.name })
             } else if (specifier.type === 'ImportNamespaceSpecifier') {
               type = 'namespace'
               alias = specifier.local.name
               specifiers.push('*')
+              bindings.push({ imported: '*', local: specifier.local.name })
             } else if (specifier.type === 'ImportSpecifier') {
               if (type === 'side-effect') type = 'named'
-              specifiers.push(specifier.imported.name)
+              const imported = specifier.imported.name ?? specifier.imported.value
+              specifiers.push(imported)
               alias = alias || specifier.local.name
+              bindings.push({ imported, local: specifier.local.name })
             }
           }
 
-          addImport({ source, alias, type, line, specifiers })
+          addImport({ source, alias, type, line, specifiers, bindings })
           recordDependency(source)
 
           // Framework detection from imports
@@ -507,18 +518,23 @@ export function buildFileIntelligence(filePath: string | null, content: string, 
               const source = arg.value
               const line = node.loc?.start?.line ?? 0
               const specifiers: string[] = []
+              const bindings: ImportBinding[] = []
               let alias: string | null = null
 
               if (node.id.type === 'Identifier') {
                 alias = node.id.name
                 specifiers.push(node.id.name)
+                bindings.push({ imported: 'default', local: node.id.name })
               } else if (node.id.type === 'ObjectPattern') {
                 for (const prop of node.id.properties) {
-                  if (prop.key?.name) specifiers.push(prop.key.name)
+                  const imported = prop.key?.name
+                  const local = prop.value?.name
+                  if (imported) specifiers.push(imported)
+                  if (imported && local) bindings.push({ imported, local })
                 }
               }
 
-              addImport({ source, alias, type: 'require', line, specifiers })
+              addImport({ source, alias, type: 'require', line, specifiers, bindings })
               recordDependency(source)
 
               if (source.includes('express')) {

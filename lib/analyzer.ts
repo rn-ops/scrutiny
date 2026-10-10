@@ -152,7 +152,7 @@ const ALLOWED_EXTENSIONS = new Set([
   '.js', '.jsx', '.ts', '.tsx', '.py', '.php', '.c', '.cpp', '.h', '.hpp', '.java', '.cs'
 ])
 
-const IGNORED_PATH_SEGMENTS = ['node_modules/', '.git/', 'dist/', 'build/', 'vendor/']
+const IGNORED_PATH_SEGMENTS = ['node_modules', '.git', 'dist', 'build', 'vendor']
 
 const EXTENSION_PATTERN_MAP: Record<string, string[]> = {
   '.js': ['Hardcoded Secret', 'JS/TS Command Injection', 'JS/TS Command Injection (shell:true)', 'JS/TS Command Injection (template literal)', 'JS/TS Dynamic Evaluation', 'JS/TS Insecure InnerHTML', 'JS/TS Insecure InnerHTML (dangerouslySetInnerHTML)', 'JS/TS Insecure InnerHTML (document.write)', 'JS/TS Prototype Pollution'],
@@ -300,7 +300,7 @@ function getFileType(path: string) {
 
 function shouldAnalyzeFile(filePath: string) {
   const normalized = filePath.toLowerCase().replace(/\\/g, '/')
-  if (IGNORED_PATH_SEGMENTS.some(segment => normalized.includes(segment))) return false
+  if (normalized.split('/').some(segment => IGNORED_PATH_SEGMENTS.includes(segment))) return false
   return ALLOWED_EXTENSIONS.has(getFileType(normalized))
 }
 
@@ -388,7 +388,8 @@ function buildSecurityStory(title: string, matched: string, context: string, fil
 }
 
 function parseSource(content: string, filePath: string) {
-  const plugins = filePath.endsWith('.ts') || filePath.endsWith('.tsx')
+  const extension = getFileType(filePath)
+  const plugins = extension === '.ts' || extension === '.tsx'
     ? ['typescript', 'jsx', 'classProperties', 'exportDefaultFrom', 'exportNamespaceFrom', 'dynamicImport', 'optionalChaining', 'nullishCoalescingOperator', 'decorators-legacy']
     : ['jsx', 'classProperties', 'exportDefaultFrom', 'exportNamespaceFrom', 'dynamicImport', 'optionalChaining', 'nullishCoalescingOperator', 'decorators-legacy']
 
@@ -410,10 +411,33 @@ function isObjectWithType(value: unknown): value is { type: string } {
 function visit(node: any, visitors: Record<string, (node: any, state: any) => void>, state: any) {
   if (!node || typeof node !== 'object') return
   visitors[node.type]?.(node, state)
+
+  let currentFunctionName = state.currentFunctionName
+  if (node.type === 'FunctionDeclaration' && node.id?.name) {
+    currentFunctionName = node.id.name
+  } else if (
+    (node.type === 'ArrowFunctionExpression' || node.type === 'FunctionExpression') &&
+    state.parent?.type === 'VariableDeclarator' &&
+    state.parent.id?.name
+  ) {
+    currentFunctionName = state.parent.id.name
+  } else if ((node.type === 'ClassMethod' || node.type === 'ClassPrivateMethod') && node.key?.name) {
+    currentFunctionName = state.enclosingClass ? `${state.enclosingClass}.${node.key.name}` : node.key.name
+  } else if (node.type === 'ObjectMethod' && node.key?.name) {
+    currentFunctionName = node.key.name
+  }
+
   for (const key of Object.keys(node)) {
     if (key === 'loc' || key === 'start' || key === 'end') continue
     const value = node[key]
-    const childState = { ...state, parent: node, enclosingClass: node.type === 'ClassDeclaration' && node.id?.name ? node.id.name : state.enclosingClass }
+    const childState = {
+      ...state,
+      parent: node,
+      enclosingClass: (node.type === 'ClassDeclaration' || node.type === 'ClassExpression') && node.id?.name
+        ? node.id.name
+        : state.enclosingClass,
+      currentFunctionName
+    }
     if (Array.isArray(value)) value.forEach(child => isObjectWithType(child) && visit(child, visitors, childState))
     else if (isObjectWithType(value)) visit(value, visitors, childState)
   }
@@ -493,10 +517,21 @@ function scanSecurityFindings(file: string, content: string) {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
     if (line.includes('scan-ignore') || isCommentLine(line)) continue
+    const hasSpecificCommandMatch = filePatterns
+      .filter(pattern => pattern.type.includes('Command Injection ('))
+      .some(pattern => {
+        pattern.regex.lastIndex = 0
+        return pattern.regex.test(line)
+      })
+
     for (const pattern of filePatterns) {
       pattern.regex.lastIndex = 0
       const match = pattern.regex.exec(line)
       if (!match) continue
+      if (
+        hasSpecificCommandMatch &&
+        (pattern.type === 'JS/TS Command Injection' || pattern.type === 'Python Command Injection')
+      ) continue
       const context = lines.slice(Math.max(0, i - 2), Math.min(lines.length, i + 3)).join('\n')
       const matched = match[0].trim()
       findings.push({
@@ -510,7 +545,7 @@ function scanSecurityFindings(file: string, content: string) {
         context,
         ...buildSecurityStory(pattern.type, matched, context, file, i + 1)
       })
-      break
+      continue
     }
   }
   return findings
@@ -527,7 +562,6 @@ function buildFileMetadata(filePath: string, content: string, findings: Finding[
   const dependencies = new Set<string>()
   const frameworkHintsMap = new Map<string, FrameworkHint>()
   const exportedNames = new Set<string>()
-  const scopeStack: string[] = ['root']
 
   const addFunction = (meta: FunctionMeta) => {
     const existing = functions.find(fn => fn.name === meta.name)
@@ -652,8 +686,8 @@ function buildFileMetadata(filePath: string, content: string, findings: Finding[
         if (cls && !cls.methods.includes(node.key.name)) cls.methods.push(node.key.name)
         addFunction({ name: `${state.enclosingClass}.${node.key.name}`, line: node.loc?.start?.line ?? 0, params: extractParamNames(node.params), exported: false, calls: [], isAsync: node.async || false, isArrow: false, type: 'method' })
       },
-      CallExpression(node: any) {
-        const caller = scopeStack[scopeStack.length - 1] || 'root'
+      CallExpression(node: any, state: any) {
+        const caller = state.currentFunctionName || 'root'
         const calleeName = getCalleeName(node.callee)
         if (calleeName) addEdge(caller, calleeName, 'call')
         if (node.callee.type === 'MemberExpression' && node.callee.property?.name) {
@@ -708,13 +742,16 @@ function buildFileMetadata(filePath: string, content: string, findings: Finding[
 export function analyzeFiles(files: Array<{ file: string; content: string }>): AnalysisResult {
   const metadata: FileMetadata[] = []
   const findings: Finding[] = []
-  for (const { file, content } of files) {
-    if (!file || !content || !shouldAnalyzeFile(file)) continue
+  const inputFiles = Array.isArray(files) ? files : []
+  for (const entry of inputFiles) {
+    if (!entry || typeof entry.file !== 'string' || typeof entry.content !== 'string') continue
+    const { file, content } = entry
+    if (!file.trim() || !shouldAnalyzeFile(file)) continue
     const fileFindings = scanSecurityFindings(file, content)
     findings.push(...fileFindings)
     metadata.push(buildFileMetadata(file, content, fileFindings))
   }
-  return { findings, metadata, repoSummary: buildRepoSummary(metadata, findings, files.length) }
+  return { findings, metadata, repoSummary: buildRepoSummary(metadata, findings, inputFiles.length) }
 }
 
 export function buildRepoSummary(metadata: FileMetadata[], findings: Finding[], fileCount = metadata.length): RepoSummary {

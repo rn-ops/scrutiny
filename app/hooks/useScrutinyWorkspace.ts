@@ -10,6 +10,7 @@ import {
   type FileMetadata,
   type Finding
 } from '@/lib/analyzer'
+import { buildFileIntelligence, type FileIntelligence } from '@/lib/fileIntelligence'
 
 const emptyAnalysis: AnalysisResult = {
   findings: [],
@@ -57,6 +58,7 @@ export function useScrutinyWorkspace() {
   const [fileError, setFileError] = useState<string | null>(null)
   const [selectedFinding, setSelectedFinding] = useState<Finding | null>(null)
   const [analysis, setAnalysis] = useState<AnalysisResult>(emptyAnalysis)
+  const [fileIntelligenceByPath, setFileIntelligenceByPath] = useState<Record<string, FileIntelligence>>({})
   const [repoInsights, setRepoInsights] = useState<string | null>(null)
   const [insightsLoading, setInsightsLoading] = useState(false)
   const [insightsError, setInsightsError] = useState<string | null>(null)
@@ -75,6 +77,16 @@ export function useScrutinyWorkspace() {
     [analysis.findings, selectedFile]
   )
 
+  const selectedFileIntelligence = useMemo(
+    () => selectedFile ? fileIntelligenceByPath[selectedFile] ?? null : null,
+    [fileIntelligenceByPath, selectedFile]
+  )
+
+  const scannedFileIntelligence = useMemo(
+    () => Object.values(fileIntelligenceByPath),
+    [fileIntelligenceByPath]
+  )
+
   const selectedExplanation = selectedFinding ? explanations[selectedFinding.title] : null
 
   const resetScanState = () => {
@@ -85,6 +97,7 @@ export function useScrutinyWorkspace() {
     setFileContent('')
     setFiles([])
     setAnalysis(emptyAnalysis)
+    setFileIntelligenceByPath({})
     setRepoInsights(null)
     setInsightsError(null)
   }
@@ -92,6 +105,10 @@ export function useScrutinyWorkspace() {
   const analyzeAndStore = (file: string, content: string, knownFileCount = files.length) => {
     const next = analyzeFiles([{ file, content }])
     setAnalysis(previous => mergeAnalysis(previous, next, knownFileCount || previous.repoSummary.fileCount || 1))
+    const intelligence = buildFileIntelligence(file, content, next.findings)
+    if (intelligence) {
+      setFileIntelligenceByPath(previous => ({ ...previous, [file]: intelligence }))
+    }
     return next
   }
 
@@ -108,6 +125,7 @@ export function useScrutinyWorkspace() {
       setSelectedFile(null)
       setFileContent('')
       setAnalysis(emptyAnalysis)
+      setFileIntelligenceByPath({})
       setError('Paste source code before analyzing.')
       setStatus('Waiting for pasted code')
       return
@@ -116,7 +134,10 @@ export function useScrutinyWorkspace() {
     setSelectedFile(file)
     setFileContent(devCode)
     setStatus(`Loaded pasted file ${file}`)
-    setAnalysis(analyzeFiles([{ file, content: devCode }]))
+    const result = analyzeFiles([{ file, content: devCode }])
+    setAnalysis(result)
+    const intelligence = buildFileIntelligence(file, devCode, result.findings)
+    setFileIntelligenceByPath(intelligence ? { [file]: intelligence } : {})
   }
 
   const handleScan = async () => {
@@ -261,6 +282,8 @@ export function useScrutinyWorkspace() {
     selectedFindings,
     selectedMetadata,
     selectedExplanation,
+    selectedFileIntelligence,
+    scannedFileIntelligence,
     analysis,
     repoInsights,
     insightsLoading,

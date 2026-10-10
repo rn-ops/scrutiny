@@ -24,6 +24,8 @@ export default function Page() {
       setSelectedFinding={workspace.setSelectedFinding}
       selectedFindings={workspace.selectedFindings}
       selectedMetadata={workspace.selectedMetadata}
+      selectedFileIntelligence={workspace.selectedFileIntelligence}
+      scannedFileIntelligence={workspace.scannedFileIntelligence}
       selectedExplanation={workspace.selectedExplanation}
       repoSummary={workspace.analysis.repoSummary}
       repoInsights={workspace.repoInsights}
