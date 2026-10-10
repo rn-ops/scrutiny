@@ -36,9 +36,9 @@ GITHUB_TOKEN=optional_github_token_here
 
 1. Paste a GitHub repository URL and click `Scan Repo`.
 2. Select files from the repository list. Each opened file is analyzed locally and added to the accumulated repo context.
-3. Review selected-file findings, risk score, inferred metadata, module summaries, and hotspots.
+3. Review findings and risk signals first, then inferred metadata, module summaries, and hotspots.
 4. Click `Generate Insights` when you want Gemini to summarize all files scanned so far.
-5. Toggle `Dev Mode` to paste a single file and run local analysis without repository context.
+5. Toggle `Dev Mode` to paste a single file and run local analysis without GitHub requests or repository context.
 
 Gemini is not called during repo scan or file load. The AI route receives only compact structured metadata and findings when `Generate Insights` is clicked.
 
@@ -82,7 +82,7 @@ Scrutiny keeps AI usage explicit and compact:
 - file selection fetches source and runs local analysis only
 - scanned findings and metadata are retained in client state
 - `Generate Insights` sends summarized findings and metadata, not full source
-- identical compact payloads reuse cached AI output
+- identical compact payloads reuse cached AI output for the current page session
 - dev mode remains useful without AI and can generate separate paste-file insights when needed
 
 ## Design Rationale

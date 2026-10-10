@@ -390,7 +390,7 @@ function Notice({ children }: { children: ReactNode }) {
 
 export function ScrutinyDashboard(props: DashboardProps) {
   return (
-    <div className="relative min-h-screen bg-slate-100 text-slate-900 dark:bg-slate-950 dark:text-slate-100">q
+    <div className="relative min-h-screen bg-slate-100 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
       <main className="mx-auto flex w-full max-w-[105rem] flex-col gap-4 px-5 py-10 lg:px-10">
         <header className="flex flex-col gap-2">
           <h1 className="text-4xl font-bold tracking-tight text-slate-950 dark:text-slate-50">RepoLens</h1>
@@ -398,7 +398,6 @@ export function ScrutinyDashboard(props: DashboardProps) {
         </header>
 
         <ScanControls {...props} />
-        <RiskOverview summary={props.repoSummary} />
 
         <div className="grid min-w-0 gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
           <FileBrowser
@@ -426,6 +425,7 @@ export function ScrutinyDashboard(props: DashboardProps) {
           </div>
         </div>
 
+        <RiskOverview summary={props.repoSummary} />
         <RepoIntelligence summary={props.repoSummary} />
         <InsightsPanel
           repoInsights={props.repoInsights}

@@ -103,6 +103,16 @@ export function useScrutinyWorkspace() {
     setRepoInsights(null)
     setInsightsError(null)
     setFiles([])
+
+    if (!devCode.trim()) {
+      setSelectedFile(null)
+      setFileContent('')
+      setAnalysis(emptyAnalysis)
+      setError('Paste source code before analyzing.')
+      setStatus('Waiting for pasted code')
+      return
+    }
+
     setSelectedFile(file)
     setFileContent(devCode)
     setStatus(`Loaded pasted file ${file}`)
@@ -110,7 +120,7 @@ export function useScrutinyWorkspace() {
   }
 
   const handleScan = async () => {
-    if (devMode && devCode.trim()) {
+    if (devMode) {
       handleDevPasteScan()
       return
     }
