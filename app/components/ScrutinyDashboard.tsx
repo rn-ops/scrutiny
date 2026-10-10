@@ -390,10 +390,10 @@ function Notice({ children }: { children: ReactNode }) {
 
 export function ScrutinyDashboard(props: DashboardProps) {
   return (
-    <div className="relative min-h-screen bg-slate-100 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+    <div className="relative min-h-screen bg-slate-100 text-slate-900 dark:bg-slate-950 dark:text-slate-100">q
       <main className="mx-auto flex w-full max-w-[105rem] flex-col gap-4 px-5 py-10 lg:px-10">
         <header className="flex flex-col gap-2">
-          <h1 className="text-4xl font-bold tracking-tight text-slate-950 dark:text-slate-50">Scrutiny</h1>
+          <h1 className="text-4xl font-bold tracking-tight text-slate-950 dark:text-slate-50">RepoLens</h1>
           <p className="max-w-2xl text-base text-slate-600 dark:text-slate-400">Local-first security scanning with AI insights only when you ask for them.</p>
         </header>
 
