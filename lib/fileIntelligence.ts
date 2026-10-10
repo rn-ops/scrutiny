@@ -9,7 +9,7 @@
  */
 
 import { parse } from '@babel/parser'
-import { Finding } from '@/lib/scanner'
+import { Finding } from '@/lib/analyzer'
 
 // ──────────────────────────────────────────────────────────────
 // TYPES & INTERFACES
